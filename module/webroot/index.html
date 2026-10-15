@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RMG NetGuard</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #121417; color: #d7dce2; font: 14px/1.55 -apple-system, "Segoe UI", Roboto, sans-serif; padding: 16px; }
+  h1 { font-size: 17px; margin-bottom: 2px; }
+  .sub { color: #7d8792; font-size: 12px; margin-bottom: 14px; }
+  .card { background: #1b1f24; border: 1px solid #2a3038; border-radius: 10px; padding: 12px 14px; margin-bottom: 12px; }
+  .card h2 { font-size: 13px; color: #9aa6b2; margin-bottom: 8px; font-weight: 600; }
+  .kv { display: flex; justify-content: space-between; padding: 3px 0; }
+  .kv b { font-weight: 600; color: #e8edf2; text-align: right; }
+  .badge { padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+  .ok    { background: #14351f; color: #58d97a; }
+  .warn  { background: #3a2a10; color: #f0b84a; }
+  .risk  { background: #3d1414; color: #f26d6d; }
+  .info  { background: #14263a; color: #5cb3f2; }
+  .mut   { background: #232a32; color: #9aa6b2; }
+  .btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+  button { background: #232a32; color: #d7dce2; border: 1px solid #2f3944; border-radius: 8px; padding: 10px 8px; font-size: 13px; cursor: pointer; }
+  button:active { background: #2c3540; }
+  button.danger { border-color: #6b2b2b; color: #f29393; }
+  button.accent { border-color: #2b4d6b; color: #7cc4f2; }
+  button.wide { grid-column: span 2; }
+  button:disabled { opacity: 0.45; }
+  pre { background: #15181c; border: 1px solid #262c33; border-radius: 8px; padding: 10px; font: 12px/1.5 ui-monospace, Consolas, monospace; white-space: pre-wrap; word-break: break-all; color: #b9c4cf; max-height: 300px; overflow: auto; }
+  .hint { color: #66707b; font-size: 11px; margin-top: 8px; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+  label.auto { color: #7d8792; font-size: 12px; }
+</style>
+</head>
+<body>
+  <h1>RMG NetGuard <span style="font-size:12px;color:#7d8792">v2.0.0</span></h1>
+  <div class="sub">DNS / VPN 双轨接管守护 · 默认仅观测 · 切换均健康门控且可逆</div>
+
+  <div class="card">
+    <h2>实时状态（90s 采样）</h2>
+    <div class="kv"><span>状态判定</span><b id="st_state">--</b></div>
+    <div class="kv"><span>模式 / 轨道</span><b id="st_modetrack">--</b></div>
+    <div class="kv"><span>运行客户端</span><b id="st_client">--</b></div>
+    <div class="kv"><span>VPN 接口</span><b id="st_vpn">--</b></div>
+    <div class="kv"><span>AGH 53 劫持</span><b id="st_hijack">--</b></div>
+    <div class="kv"><span>AGH 进程 / 5591</span><b id="st_agh">--</b></div>
+    <div class="kv"><span>系统 DNS 延迟</span><b id="st_dns">--</b></div>
+    <div class="kv"><span>采样时间</span><b id="st_ts">--</b></div>
+  </div>
+
+  <div class="card">
+    <h2>模式与集成（开启即代表授权模块执行对应动作）</h2>
+    <div class="btns">
+      <button id="btn_obs" onclick="setMode('observe')">仅观测模式</button>
+      <button id="btn_auto" onclick="setMode('auto')">自动双轨模式</button>
+      <button class="accent wide" onclick="integToggle()">切换 DNS 集成（Meta profile 补丁）</button>
+    </div>
+    <div class="kv"><span>当前模式</span><b id="st_mode2">--</b></div>
+    <div class="kv"><span>集成状态</span><b id="st_integ">--</b></div>
+    <div class="kv"><span>过滤探针</span><b id="st_probe">--</b></div>
+    <div class="kv"><span>AGH 日志年龄</span><b id="st_qage">--</b></div>
+    <div class="hint">仅观测 = v1 行为，零干预。自动双轨 = VPN 稳定开→摘劫持（轨道 B），稳定关→恢复劫持（轨道 A）；每次动作前强制 AGH 存活+5591 应答检查，动作全程写日志。DNS 集成 = 将 Meta 活动 profile 的 mihomo 上游指向 AGH（自动备份/自动重打/可一键还原）。</div>
+  </div>
+
+  <div class="btns">
+    <button onclick="refreshAll()">刷新全部</button>
+    <button onclick="run('probe')">一键体检</button>
+    <button onclick="run('audit')">规则健康审计</button>
+    <button onclick="run('stats')">AGH 拦截统计</button>
+    <button class="wide" onclick="run('log')">事件日志（最近 20 条）</button>
+    <button class="danger" onclick="ctl('detach')">手动摘除 AGH 劫持</button>
+    <button onclick="ctl('attach')">手动恢复 AGH 劫持</button>
+  </div>
+
+  <div class="card">
+    <h2>输出</h2>
+    <pre id="out">就绪。</pre>
+    <div class="row">
+      <input type="checkbox" id="autoref"> <label class="auto" for="autoref">每 30 秒自动刷新状态</label>
+    </div>
+    <div class="hint">安全边界：模块只动 nat OUTPUT 上那一条 jump（链体永不触碰）；AGH 不应答时任何切换都会被拒绝；卸载时自动还原劫持与 profile 补丁。</div>
+  </div>
+
+<script>
+(function () {
+  'use strict';
+  var MODPATH = '/data/adb/modules/rmg_netguard';
+
+  // KernelSU WebViewInterface contract (source-verified):
+  //   exec(cmd)                     -> sync, returns stdout string
+  //   exec(cmd, cb)                 -> async
+  //   exec(cmd, optionsJSON, cb)    -> async; options MUST be a valid JSON
+  //                                    string ("{}"); cb = window[fn](errno, stdout, stderr)
+  function execCmd(cmd, cb) {
+    if (typeof ksu === 'undefined' || !ksu.exec) {
+      cb(-1, '', 'ksu bridge unavailable');
+      return;
+    }
+    var fn = '__ng_cb_' + Date.now() + '_' + Math.floor(Math.random() * 1000000);
+    var settled = false;
+    window[fn] = function (errno, stdout, stderr) {
+      if (settled) { return; }
+      settled = true;
+      try { delete window[fn]; } catch (e) {}
+      cb(errno || 0, stdout || '', stderr || '');
+    };
+    try {
+      ksu.exec(cmd, '{}', fn);
+    } catch (e) {
+      if (settled) { return; }
+      settled = true;
+      try { delete window[fn]; } catch (e2) {}
+      try {
+        var out = ksu.exec(cmd); // sync fallback
+        cb(0, out || '', '');
+      } catch (e3) {
+        cb(-1, '', String(e3));
+      }
+    }
+  }
+
+  function show(txt) {
+    document.getElementById('out').textContent = txt;
+  }
+
+  // run a webui.sh subcommand and dump output
+  function run(sub, done) {
+    show('执行 ' + sub + ' …');
+    execCmd('sh ' + MODPATH + '/scripts/webui.sh ' + sub, function (errno, stdout, stderr) {
+      var text = stdout || '';
+      if (stderr) { text += '\n[stderr]\n' + stderr; }
+      if (errno) { text += '\n[exit=' + errno + ']'; }
+      show(text || '(无输出)');
+      if (done) { done(); }
+    });
+  }
+
+  function refreshStatus(done) {
+    execCmd('sh ' + MODPATH + '/scripts/webui.sh status', function (errno, stdout) {
+      var lines = (stdout || '').split('\n');
+      var s = null;
+      for (var i = 0; i < lines.length; i++) {
+        var L = lines[i];
+        if (L.charAt(0) === '{') {
+          try { s = JSON.parse(L); } catch (e) {}
+        }
+      }
+      var rest = lines.filter(function (x) { return x.charAt(0) !== '{'; }).join('\n').trim();
+      // state card
+      var stHtml;
+      if (!s) {
+        stHtml = '<span class="badge info">尚无快照</span>';
+      } else if (s.state === 'RISK_COEXIST')      { stHtml = '<span class="badge risk">串联风险 RISK</span>'; }
+      else if (s.state === 'INCONSISTENT')        { stHtml = '<span class="badge warn">不一致</span>'; }
+      else if (s.state === 'DOWN_PORT')           { stHtml = '<span class="badge risk">DNS 黑洞</span>'; }
+      else                                        { stHtml = '<span class="badge ok">正常</span>'; }
+      document.getElementById('st_state').innerHTML = stHtml;
+      var modeTxt = (s && s.mode) ? s.mode : 'observe';
+      var trackTxt = (s && s.track) ? s.track : '?';
+      document.getElementById('st_modetrack').innerHTML =
+        '<span class="badge ' + (modeTxt === 'auto' ? 'accent' : 'mut') + '" style="background:' + (modeTxt === 'auto' ? '#14263a' : '#232a32') + ';color:' + (modeTxt === 'auto' ? '#7cc4f2' : '#9aa6b2') + '">' + modeTxt + '</span> ' +
+        '<span class="badge mut">轨道 ' + trackTxt + '</span>';
+      document.getElementById('st_client').textContent = (s && s.client) || '--';
+      document.getElementById('st_vpn').textContent = (s && s.vpn) ? (s.vpn_if || 'tun') : '无';
+      document.getElementById('st_hijack').textContent = (s && s.hijack) ? '在挂' : '未挂载';
+      document.getElementById('st_agh').textContent = (s ? s.agh_pid : '--') + ' / ' + (s && s.agh_port ? '监听' : '无');
+      document.getElementById('st_dns').textContent = (s ? s.dns_ms : '--') + ' ms';
+      document.getElementById('st_ts').textContent = (s && s.ts) || '--';
+      // mode/integration/probe parsed from webui.sh status text
+      var mode2 = /mode=(\w+)/.exec(rest);
+      var integ = /integration=(\w+)/.exec(rest);
+      var prof = /profile=(\w+)/.exec(rest);
+      var fp = /filter_probe=(\w+)/.exec(rest);
+      var fw = /filter_probe_wedge=(\w+)/.exec(rest);
+      var qa = /querylog_age=(-?\d+)/.exec(rest);
+      document.getElementById('st_mode2').textContent = mode2 ? mode2[1] : '--';
+      var integEl = document.getElementById('st_integ');
+      if (integ) {
+        var on = integ[1] === 'on';
+        var patched = prof && prof[1] === 'patched';
+        integEl.innerHTML = '<span class="badge ' + (on ? (patched ? 'ok' : 'warn') : 'mut') + '">' +
+          (on ? (patched ? '已开启·已打补丁' : '已开启·未打补丁') : '关闭') + '</span>';
+      } else { integEl.textContent = '--'; }
+      var prEl = document.getElementById('st_probe');
+      if (fp) {
+        var v = fp[1];
+        var w = fw ? fw[1] : '';
+        var html = '<span class="badge ' + (v === 'BLOCKED' ? 'ok' : (v === 'OPEN' ? 'risk' : 'mut')) + '">' + v + '</span>';
+        if (w) {
+          html += ' <span class="badge ' + (w === 'BLOCKED' ? 'ok' : (w === 'OPEN' ? 'risk' : 'warn')) + '">wedge ' + w + '</span>';
+          if (v === 'BLOCKED' && w === 'UNKNOWN') {
+            html += ' <span class="badge risk">AGH 退化签名·建议重启 AGH</span>';
+          }
+        }
+        prEl.innerHTML = html;
+      } else { prEl.textContent = '--'; }
+      var qaEl = document.getElementById('st_qage');
+      if (qa) {
+        var age = parseInt(qa[1], 10);
+        qaEl.innerHTML = '<span class="badge ' + (age >= 1800 ? 'warn' : 'mut') + '">' + (age >= 0 ? age + 's' : 'n/a') + '</span>';
+      } else { qaEl.textContent = '--'; }
+      document.getElementById('btn_obs').disabled = (modeTxt === 'observe');
+      document.getElementById('btn_auto').disabled = (modeTxt === 'auto');
+      if (done) { done(); }
+    });
+  }
+
+  function refreshAll() { refreshStatus(); }
+
+  function setMode(m) {
+    var msg = m === 'auto'
+      ? '确认切换到【自动双轨】模式？\n\n模块将随 VPN 开/关自动摘/恢复 AGH 53 劫持（单条规则、健康门控、全程日志）。\n随时可切回仅观测。'
+      : '确认切换回【仅观测】模式？\n\n模块将停止自动切换（保持当前拓扑不变）。';
+    if (!window.confirm(msg)) { return; }
+    run(m === 'auto' ? 'mode_auto' : 'mode_observe', refreshStatus);
+  }
+
+  function integToggle() {
+    execCmd('sh ' + MODPATH + '/scripts/webui.sh status', function (e, stdout) {
+      var m = /integration=(\w+)/.exec(stdout || '');
+      var on = m && m[1] === 'on';
+      var msg = on
+        ? '确认关闭 DNS 集成？\n\n将从备份还原 Meta 活动 profile（移除 NS5591 补丁），Clash Meta 需重开 VPN 生效。'
+        : '确认开启 DNS 集成？\n\n将备份并补丁 Meta 活动 profile（nameserver -> 127.0.0.1:5591），订阅更新后自动重打；Clash Meta 需重开 VPN 生效。\n随时可在此一键还原。';
+      if (!window.confirm(msg)) { return; }
+      run(on ? 'integ_off' : 'integ_on', refreshStatus);
+    });
+  }
+
+  function ctl(action) {
+    var msg = action === 'detach'
+      ? '确认手动摘除 AGH 53 劫持？（链体保留，可随时恢复）'
+      : '确认恢复 AGH 53 劫持？（插入 nat OUTPUT 位置 1）';
+    if (!window.confirm(msg)) { return; }
+    run(action, refreshStatus);
+  }
+
+  var timer = null;
+  function autoRefresh() {
+    var onoff = document.getElementById('autoref').checked;
+    if (onoff && !timer) {
+      timer = window.setInterval(refreshStatus, 30000);
+    } else if (!onoff && timer) {
+      window.clearInterval(timer);
+      timer = null;
+    }
+  }
+
+  window.refreshAll = refreshAll;
+  window.run = run;
+  window.setMode = setMode;
+  window.integToggle = integToggle;
+  window.ctl = ctl;
+  document.getElementById('autoref').addEventListener('change', autoRefresh);
+  refreshStatus();
+})();
+</script>
+</body>
+</html>

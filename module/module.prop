@@ -1,0 +1,6 @@
+id=rmg_netguard
+name=RMG NetGuard 网络DNS守护
+version=v2.0.0
+versionCode=20
+author=deanc
+description=RMG NetGuard v2.0.0｜DNS/VPN 双轨接管守护：默认仅观测（v1 行为）；可选自动双轨（VPN 稳定开→摘劫持/稳定关→恢复，健康门控+flock 单写者+滞留防抖）；DNS 集成开关（Meta profile NS5591 补丁：自动备份/漂移检测/订阅更新自动重打/一键还原）；WebUI 全功能面板（模式/轨道/客户端/过滤探针/AGH 拦截统计/事件日志）；卸载自动还原全部变更
