@@ -1,7 +1,41 @@
-# RMG NetGuard (rmg_netguard) v2.0.0
+# RMG NetGuard (rmg_netguard) v2.1.0
 
 DNS / VPN 双轨接管守护模块（KernelSU，late-load 兼容）。基于 2026-10-14/15 排查报告
 `S9180_网络卡顿全面排查与优化模块设计报告_2026-10-14.md` 的四项约束设计。
+
+## v2.1.0 变更（2026-10-15）
+
+**1) WebUI 防卡死（UX/UI 重构）**
+- 根因：`webui.sh status` 串行 2 个过滤探针（每个 `timeout 3 nc -w 2`，AGH 未应答
+  即 6s）+ `probe.sh` 体检串行执行（2 探针 6s + 5 次串行 curl 最坏 30s + 2 端口探测
+  4s ≈ 最坏 40s），且 UI 无忙碌态、按钮不禁用，用户连点造成 shell 堆积
+- 脚本侧提速：过滤探针**并行对**（`filter_probe_pair`，墙钟=单探针上限）、
+  DNS 延迟改 **3 次并发采样**（@3s 上限，原 5 次串行 @6s）、端口存活探测并行、
+  querylog 统计改**单遍 awk**（原 4 遍扫描）、探针超时降为 `FILTER_PROBE_TMO`(2s)
+  实测：status 3s（原 6-8s）、probe 7s（原最坏 40s）、stats/log 0s
+- UI 侧：忙碌管理器（单飞锁 + 全按钮禁用 + 顶部进度条 + 秒数计时 + 90s 看门狗
+  强制解锁）、自动刷新遇忙跳过、探针 SKIP/AGH 未运行徽章与说明条
+
+**2) 无 AGH / 无 Clash 环境优雅降级（已实测）**
+- env.sh 全部目标路径/包名/进程名/劫持链可环境变量覆盖（模拟钩子）
+- `agh_installed / agh_running / clash_installed / target_present` 可用性判定；
+  AGH 未运行 → status/probe 探针**即时 SKIP**（零等待），体检打印"未安装·纯观测"横幅
+- guard 空载退避：无任何目标时 `IDLE_INTERVAL`(300s) 长睡眠，跳过 curl/看门狗/审计/
+  控制器，state 记 `dns_ms:"n/a"`，进出空载各记一条 IDLE 事件
+- 实测（全套 SIM 覆盖 + 隔离测试目录）：status 0s 全 SKIP、体检 NORMAL 无异常、
+  controller/config_toggle 干净拒绝、audit 全 INFO、空载 guard 12s CPU ticks=0
+- 顺带修复 3 个存量缺陷：**toybox flock 不支持 -w**（detach/attach 曾静默空转，
+  改为 flock 探测 + mkdir 自旋锁回退）；controller/config_toggle 无条件 `exit 0`
+  （失败误判成功，现正确传播 rc）；5 处硬编码 `pidof AdGuardHome`/路径统一为
+  `$AGH_PROC`/可覆盖变量；guard 自注册 pid（手动重启也可追踪）
+
+**3) 空载网络零开销（已实测）**
+- 模块自身**零 netfilter 规则**（`iptables-save | grep -ci netguard` = 0），
+  观测/空载模式从不触碰网络路径
+- A/B 实测（guard 运行 vs 停止，5×curl，同一 Wi-Fi+TUN 承载）：DNS 中位
+  7.5ms vs 8.4ms、总延迟 2.3-4.0s vs 2.5-3.9s（TUN 固有），统计无差异
+- 生产 guard（observe）60s CPU = 0 ticks；空载模式 CPU = 0 ticks；无 wakelock
+  （纯 shell sleep 循环）；蜂窝路径由结构保证（零规则+零探测，代码与承载无关）
 
 ## v2.0.0 架构（2026-10-15）
 

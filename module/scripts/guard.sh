@@ -27,11 +27,16 @@ fi
 
 mkdir -p "$RUN" "$BKDIR"
 
+# v2.1: self-register pid (service.sh also writes it; this makes manual
+# restarts via WebUI/shell equally trackable and killable)
+echo $$ > "$PID_GUARD" 2>/dev/null
+
 LAST_STATE=""
 LAST_DNS_MS=""
 VPN_ON_N=0
 VPN_OFF_N=0
 ROUND=0
+IDLE=0
 
 classify() {
   # classify -> RISK_COEXIST | INCONSISTENT | DOWN_PORT | NORMAL
@@ -60,10 +65,27 @@ while :; do
   vpn_if_detect
   HIJACK=0
   if hijack_check; then HIJACK=1; fi
-  ports_check
-  AGH_PID=$(pidof AdGuardHome 2>/dev/null)
+  AGH_PID=$(pidof "$AGH_PROC" 2>/dev/null)
   [ -n "$AGH_PID" ] || AGH_PID=0
   client_detect
+
+  # ---- v2.1 idle backoff: nothing installed to watch -> near-zero cost ----
+  # (no DNS curl, no watchdogs, no audit, no controller; long sleep)
+  if ! target_present && [ "$HIJACK" != "1" ]; then
+    if [ "$IDLE" != "1" ]; then
+      IDLE=1
+      log_event "IDLE" "no AGH / no Clash present -> idle backoff (${IDLE_INTERVAL}s), pure observation"
+    fi
+    write_state "NORMAL" "$VPN_UP" "$VPN_IF" "$HIJACK" "$AGH_PID" 0 0 "n/a" "$CLIENT" "$MODE" "-"
+    sleep "$IDLE_INTERVAL"
+    continue
+  fi
+  if [ "$IDLE" = "1" ]; then
+    IDLE=0
+    log_event "IDLE" "target re-appeared -> back to normal ${INTERVAL}s loop"
+  fi
+
+  ports_check
 
   ST=$(classify)
   TRACK=$(track_of)

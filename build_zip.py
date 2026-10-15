@@ -11,7 +11,7 @@ import zipfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SRC = os.path.join(HERE, "module")
-OUT = os.path.join(HERE, "rmg-netguard-v2.0.0.zip")
+OUT = os.path.join(HERE, "rmg-netguard-v2.1.0.zip")
 
 
 def md5(path):

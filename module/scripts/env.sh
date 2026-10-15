@@ -25,26 +25,49 @@ LOCK="$RUN/ctrl.lock"
 BKDIR="$RUN/backups"
 
 MODID="rmg_netguard"
-AGH_MODDIR="/data/adb/modules/AdGuardHome"
-AGH_CHAIN="ADGUARD_REDIRECT_DNS"
-AGH_PORT="5591"
-AGH_QUERYLOG="/data/adb/agh/bin/data/querylog.json"
+# v2.1: all target paths/packages are overridable via environment
+# (simulation hook for "no AGH / no Clash" testing; normal runs use defaults).
+AGH_MODDIR="${AGH_MODDIR:-/data/adb/modules/AdGuardHome}"
+AGH_DIR="${AGH_DIR:-/data/adb/agh}"
+AGH_CHAIN="${AGH_CHAIN:-ADGUARD_REDIRECT_DNS}"
+AGH_PORT="${AGH_PORT:-5591}"
+AGH_QUERYLOG="${AGH_QUERYLOG:-/data/adb/agh/bin/data/querylog.json}"
 MIHOMO_PORT="1053"
 
-META_PKG="com.github.metacubex.clash.meta"
-FLCLASH_PKG="com.follow.clash"
-META_IMPORT="/data/data/$META_PKG/files/imported"
-META_PREFS="/data/data/$META_PKG/shared_prefs/service.xml"
+META_PKG="${META_PKG:-com.github.metacubex.clash.meta}"
+FLCLASH_PKG="${FLCLASH_PKG:-com.follow.clash}"
+META_IMPORT="${META_IMPORT:-/data/data/$META_PKG/files/imported}"
+META_PREFS="${META_PREFS:-/data/data/$META_PKG/shared_prefs/service.xml}"
 NS5591="127.0.0.1:5591"
 
 # tunables (defaults; $RUN/config may override via guard.sh)
 INTERVAL="${INTERVAL:-90}"
+IDLE_INTERVAL="${IDLE_INTERVAL:-300}" # sleep when no target (AGH+Clash absent)
 AUDIT_EVERY="${AUDIT_EVERY:-20}"
 DNS_EVERY="${DNS_EVERY:-5}"
 DNS_WARN_MS="${DNS_WARN_MS:-800}"
 CURL_TARGET="${CURL_TARGET:-http://www.baidu.com}"
 CURL_TIMEOUT="${CURL_TIMEOUT:-6}"
 HYSTERESIS="${HYSTERESIS:-2}"        # consecutive rounds before acting
+FILTER_PROBE_TMO="${FILTER_PROBE_TMO:-2}"  # per-probe ceiling, seconds
+
+# ---- availability helpers (v2.1: graceful degradation w/o AGH / Clash) ----
+AGH_PROC="${AGH_PROC:-AdGuardHome}"   # simulation hook: set to a dead name
+agh_installed() {
+  [ -d "$AGH_DIR" ] || [ -d "$AGH_MODDIR" ]
+}
+agh_running() {
+  [ -n "$(pidof "$AGH_PROC" 2>/dev/null)" ]
+}
+clash_installed() {
+  [ -d "/data/data/$META_PKG" ] || [ -d "/data/data/$FLCLASH_PKG" ]
+}
+# target_present = module has anything to watch at all; false -> idle mode
+target_present() {
+  agh_installed && return 0
+  clash_installed && return 0
+  [ -n "$(pidof "$AGH_PROC" 2>/dev/null)" ]
+}
 
 log_event() {
   # log_event <tag> <message...>
@@ -119,10 +142,11 @@ ports_check() {
 }
 
 # end-to-end system-path DNS latency in ms (what apps actually feel).
-# 1 fork (curl). echoes integer ms, or "timeout" on failure.
+# 1 fork (curl). Optional $1 = curl max-time override (probe.sh uses 3).
+# echoes integer ms, or "timeout" on failure.
 dns_latency_ms() {
-  local v sec frac ms
-  v=$(curl -o /dev/null -s --max-time "$CURL_TIMEOUT" -w '%{time_namelookup}' "$CURL_TARGET" 2>/dev/null)
+  local v sec frac ms tmo="${1:-$CURL_TIMEOUT}"
+  v=$(curl -o /dev/null -s --max-time "$tmo" -w '%{time_namelookup}' "$CURL_TARGET" 2>/dev/null)
   case "$v" in
     ''|*[!0-9.]*) echo timeout; return 1 ;;
   esac
@@ -133,6 +157,22 @@ dns_latency_ms() {
   case "$frac" in *[!0-9]*) frac=000000 ;; esac
   ms=$(( sec * 1000 + frac / 1000 ))
   echo "$ms"
+}
+
+# parallel batch of N system-path DNS latency samples (v2.1).
+# echoes one result per line (ms or timeout); wall time = worst single
+# sample, NOT sum -- keeps 一键体检 under a few seconds.
+dns_latency_batch() {
+  local n="${1:-3}" i out="$RUN/.dl.$$"
+  : > "$out"
+  i=0
+  while [ $i -lt "$n" ]; do
+    ( dns_latency_ms "${2:-3}" >> "$out" 2>/dev/null ) &
+    i=$(( i + 1 ))
+  done
+  wait
+  cat "$out"
+  rm -f "$out" 2>/dev/null
 }
 
 # DNS liveness probe against a local resolver over UDP (liveness only;
@@ -150,10 +190,11 @@ probe_dns() {
 # BLOCKED = rcode3(NXDOMAIN) or answer rdata 0.0.0.0; OPEN = real answer.
 # echoes: BLOCKED | OPEN | UNKNOWN
 # Parameterized core: $1 = printf query string (raw DNS A-query bytes).
+# v2.1: ceiling FILTER_PROBE_TMO (default 2s, was fixed 3s + -w 2).
 filter_probe_domain() {
   local hex rcode ancount
   hex=$(printf "$1" \
-        | timeout 3 nc -u -w 2 127.0.0.1 "$AGH_PORT" 2>/dev/null \
+        | timeout "$FILTER_PROBE_TMO" nc -u -w 1 127.0.0.1 "$AGH_PORT" 2>/dev/null \
         | od -An -v -tx1 | tr -d ' \n')
   [ -n "$hex" ] || { echo UNKNOWN; return; }
   rcode=$(echo "$hex" | cut -c7-8)          # flags low byte
@@ -181,6 +222,19 @@ filter_probe() {
 # xiaomi=BLOCKED + googleads=UNKNOWN is the single-domain-wedge signature.
 filter_probe_wedge() {
   filter_probe_domain '\001\002\001\000\000\001\000\000\000\000\000\000\011googleads\001g\007doubleclick\003net\000\000\001\000\001'
+}
+
+# v2.1: run BOTH filter probes concurrently; echoes "P=<res> W=<res>".
+# Wall time = worst single probe (<= FILTER_PROBE_TMO), not the sum.
+# Temp files are $-suffixed: concurrent WebUI invocations cannot collide.
+filter_probe_pair() {
+  local pf="$RUN/.fp_p.$$" wf="$RUN/.fp_w.$$" r
+  ( filter_probe       > "$pf" 2>/dev/null ) &
+  ( filter_probe_wedge > "$wf" 2>/dev/null ) &
+  wait
+  r="P=$(cat "$pf" 2>/dev/null) W=$(cat "$wf" 2>/dev/null)"
+  rm -f "$pf" "$wf" 2>/dev/null
+  echo "$r"
 }
 
 # querylog file age in seconds (mksh-safe: epoch seconds fit 32-bit until 2038)
@@ -213,24 +267,21 @@ integration_check() {
 }
 
 # querylog mini-stats over the most recent chunk.
+# v2.1: single awk pass (was 3x grep + awk = 4 passes over 200KB).
 # outputs:
 #   total <n> / filtered <n> / loopback <n> (client 127.0.0.1 = track B)
 #   top blocked domains (3)
 querylog_stats() {
   [ -r "$AGH_QUERYLOG" ] || { echo "total 0 filtered 0 loopback 0"; return; }
-  local chunk
-  chunk=$(tail -c 200000 "$AGH_QUERYLOG" 2>/dev/null)
-  local total filt loop
-  total=$(echo "$chunk" | grep -c '"QH":')
-  filt=$(echo "$chunk" | grep -c '"IsFiltered":true')
-  loop=$(echo "$chunk" | grep -c '"IP":"127.0.0.1"')
-  echo "total $total filtered $filt loopback $loop"
-  echo "$chunk" | awk '/"IsFiltered":true/ {
-    if (match($0, /"QH":"[^"]*"/)) {
-      d = substr($0, RSTART+6, RLENGTH-7); c[d]++
-    }
-  }
-  END { n=0; for (k in c) { if (n++>=3) break; print "  top " c[k] " " k } }' 2>/dev/null
+  tail -c 200000 "$AGH_QUERYLOG" 2>/dev/null | awk '
+    /"QH":/             { total++ }
+    /"IsFiltered":true/ { filt++
+        if (match($0, /"QH":"[^"]*"/)) { d = substr($0, RSTART+6, RLENGTH-7); c[d]++ } }
+    /"IP":"127.0.0.1"/  { loop++ }
+    END {
+      printf "total %d filtered %d loopback %d\n", total, filt, loop
+      n = 0; for (k in c) { if (n++ >= 3) break; print "  top " c[k] " " k }
+    }' 2>/dev/null
 }
 
 write_state() {

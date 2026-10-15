@@ -20,7 +20,7 @@ mkdir -p "$RUN" "$BKDIR" 2>/dev/null
 # (attaching the hijack with AGH dead = full DNS black hole; detaching
 # with mihomo's AGH upstream dead = track B resolution failure.)
 health_gate() {
-  AGH_PID=$(pidof AdGuardHome 2>/dev/null)
+  AGH_PID=$(pidof "$AGH_PROC" 2>/dev/null)
   [ -n "$AGH_PID" ] || { echo "GATE: AGH process not running"; return 1; }
   if ! probe_dns "$AGH_PORT"; then
     echo "GATE: AGH not answering on $AGH_PORT"
@@ -76,15 +76,28 @@ do_status() {
 case "$1" in
   detach|attach)
     # serialize guard-loop vs WebUI invocations; actions are idempotent so
-    # a lost race degrades to a no-op on retry
-    if command -v flock >/dev/null 2>&1; then
+    # a lost race degrades to a no-op on retry.
+    # v2.1: device toybox flock lacks -w (2026-10-15实测: silent no-op!) ->
+    # probe support first; fallback = mkdir spin-lock (atomic, 5s timeout).
+    if command -v flock >/dev/null 2>&1 && flock -w 1 "$LOCK" true 2>/dev/null; then
       flock -w 5 "$LOCK" sh "$MODDIR/scripts/controller.sh" __do "$1"
+      rc=$?
     else
-      do_"$1"
+      n=0
+      while ! mkdir "$LOCK.d" 2>/dev/null; do
+        n=$(( n + 1 ))
+        [ "$n" -ge 25 ] && { echo "FAIL: lock busy"; exit 3; }
+        sleep 0.2 2>/dev/null || sleep 1
+      done
+      "do_$1"
+      rc=$?
+      rmdir "$LOCK.d" 2>/dev/null
     fi
+    exit "$rc"
     ;;
   __do)
     "do_$2"
+    exit $?
     ;;
   status|*)
     do_status

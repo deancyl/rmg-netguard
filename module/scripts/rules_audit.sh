@@ -30,11 +30,11 @@ check_rules_file() {
 echo "== 规则健康审计 $(date '+%F %T') =="
 
 # --- FlClash ---
-FC_PREFS="/data/data/com.follow.clash/shared_prefs/FlutterSharedPreferences.xml"
+FC_PREFS="/data/data/$FLCLASH_PKG/shared_prefs/FlutterSharedPreferences.xml"
 if [ -r "$FC_PREFS" ]; then
-  echo "-- FlClash (com.follow.clash) --"
+  echo "-- FlClash ($FLCLASH_PKG) --"
   # audit every profile; active/last-run flagged via shared prefs
-  for f in /data/data/com.follow.clash/files/profiles/*.yaml; do
+  for f in "/data/data/$FLCLASH_PKG/files/profiles/"*.yaml; do
     [ -f "$f" ] || continue
     pid=${f##*/}
     tag="profile ${pid%.yaml}"
@@ -62,14 +62,14 @@ else
 fi
 
 # --- Clash Meta ---
-CM_PREFS="/data/data/com.github.metacubex.clash.meta/shared_prefs/service.xml"
+CM_PREFS="$META_PREFS"
 if [ -r "$CM_PREFS" ]; then
-  echo "-- Clash Meta (com.github.metacubex.clash.meta) --"
+  echo "-- Clash Meta ($META_PKG) --"
   act=$(grep -o 'active_profile">[a-f0-9-]*' "$CM_PREFS" 2>/dev/null | head -n 1 | sed 's/.*">//')
   if [ -n "$act" ]; then
-    check_rules_file "活动 profile ${act}" "/data/data/com.github.metacubex.clash.meta/files/imported/${act}/config.yaml"
+    check_rules_file "活动 profile ${act}" "$META_IMPORT/${act}/config.yaml"
   fi
-  ov="/data/data/com.github.metacubex.clash.meta/files/clash/override.json"
+  ov="/data/data/$META_PKG/files/clash/override.json"
   if [ -r "$ov" ]; then
     if grep -q '"default-nameserver":\["127.0.0.1:5591"\]' "$ov" 2>/dev/null; then
       echo "WARN  Clash Meta override default-nameserver 指向本地 5591 -> 冷启动死锁风险, 应改纯 IP"
@@ -85,8 +85,8 @@ fi
 
 # --- AdGuardHome module ---
 echo "-- AdGuardHome 模块 --"
-if [ -r "/data/adb/agh/settings.conf" ]; then
-  if grep -q '^enable_iptables=true' /data/adb/agh/settings.conf 2>/dev/null; then
+if [ -r "$AGH_DIR/settings.conf" ]; then
+  if grep -q '^enable_iptables=true' "$AGH_DIR/settings.conf" 2>/dev/null; then
     echo "INFO  enable_iptables=true (每次开机恢复 53 劫持; 与 Clash 并存时进入串联风险态)"
   else
     echo "OK    enable_iptables=false (AGH 不劫持 53, 与 Clash 天然无冲突)"
@@ -94,14 +94,14 @@ if [ -r "/data/adb/agh/settings.conf" ]; then
 else
   echo "INFO  /data/adb/agh 不可读"
 fi
-if [ -r "/data/adb/agh/bin/AdGuardHome.yaml" ]; then
-  if grep -q -E 'https://(1\.1\.1\.1|8\.8\.8\.8)' /data/adb/agh/bin/AdGuardHome.yaml 2>/dev/null; then
+if [ -r "$AGH_DIR/bin/AdGuardHome.yaml" ]; then
+  if grep -q -E 'https://(1\.1\.1\.1|8\.8\.8\.8)' "$AGH_DIR/bin/AdGuardHome.yaml" 2>/dev/null; then
     echo "WARN  AGH fallback 上游含境外 DoH(1.1.1.1/8.8.8.8) -> 劫持开启时该流量必经 TUN/代理, 劣化即 10-30s 级挂起(10-13 实证)"
     W=$(( W + 1 ))
   fi
 fi
 # multi-instance / stale state snapshot
-AGH_PID=$(pidof AdGuardHome 2>/dev/null); [ -n "$AGH_PID" ] || AGH_PID=0
+AGH_PID=$(pidof "$AGH_PROC" 2>/dev/null); [ -n "$AGH_PID" ] || AGH_PID=0
 HIJACK=0; hijack_check && HIJACK=1
 if [ "$AGH_PID" != "0" ] && [ "$HIJACK" != "1" ]; then
   echo "WARN  AGH 进程($AGH_PID)存活但劫持规则不在 -> 停止不对称缺陷态(历史 48 启/2 停)"

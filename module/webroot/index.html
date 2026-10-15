@@ -14,28 +14,36 @@
   .card h2 { font-size: 13px; color: #9aa6b2; margin-bottom: 8px; font-weight: 600; }
   .kv { display: flex; justify-content: space-between; padding: 3px 0; }
   .kv b { font-weight: 600; color: #e8edf2; text-align: right; }
-  .badge { padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+  .badge { padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; display: inline-block; }
   .ok    { background: #14351f; color: #58d97a; }
   .warn  { background: #3a2a10; color: #f0b84a; }
   .risk  { background: #3d1414; color: #f26d6d; }
   .info  { background: #14263a; color: #5cb3f2; }
   .mut   { background: #232a32; color: #9aa6b2; }
   .btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
-  button { background: #232a32; color: #d7dce2; border: 1px solid #2f3944; border-radius: 8px; padding: 10px 8px; font-size: 13px; cursor: pointer; }
+  button { background: #232a32; color: #d7dce2; border: 1px solid #2f3944; border-radius: 8px; padding: 10px 8px; font-size: 13px; cursor: pointer; transition: opacity .15s; }
   button:active { background: #2c3540; }
   button.danger { border-color: #6b2b2b; color: #f29393; }
   button.accent { border-color: #2b4d6b; color: #7cc4f2; }
   button.wide { grid-column: span 2; }
-  button:disabled { opacity: 0.45; }
+  button:disabled { opacity: 0.45; cursor: default; }
   pre { background: #15181c; border: 1px solid #262c33; border-radius: 8px; padding: 10px; font: 12px/1.5 ui-monospace, Consolas, monospace; white-space: pre-wrap; word-break: break-all; color: #b9c4cf; max-height: 300px; overflow: auto; }
   .hint { color: #66707b; font-size: 11px; margin-top: 8px; }
   .row { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
   label.auto { color: #7d8792; font-size: 12px; }
+  /* v2.1 busy UI */
+  #busybar { display: none; align-items: center; gap: 10px; background: #14263a; border: 1px solid #24425f; border-radius: 8px; padding: 8px 12px; margin-bottom: 12px; font-size: 13px; color: #7cc4f2; }
+  #busybar.on { display: flex; }
+  .spin { width: 14px; height: 14px; border: 2px solid #24425f; border-top-color: #7cc4f2; border-radius: 50%; animation: ngspin .8s linear infinite; flex: 0 0 auto; }
+  @keyframes ngspin { to { transform: rotate(360deg); } }
+  #out.busyline { color: #7cc4f2; }
 </style>
 </head>
 <body>
-  <h1>RMG NetGuard <span style="font-size:12px;color:#7d8792">v2.0.0</span></h1>
+  <h1>RMG NetGuard <span style="font-size:12px;color:#7d8792">v2.1.0</span></h1>
   <div class="sub">DNS / VPN 双轨接管守护 · 默认仅观测 · 切换均健康门控且可逆</div>
+
+  <div id="busybar"><span class="spin"></span><span id="busytxt">处理中…</span></div>
 
   <div class="card">
     <h2>实时状态（90s 采样）</h2>
@@ -60,7 +68,8 @@
     <div class="kv"><span>集成状态</span><b id="st_integ">--</b></div>
     <div class="kv"><span>过滤探针</span><b id="st_probe">--</b></div>
     <div class="kv"><span>AGH 日志年龄</span><b id="st_qage">--</b></div>
-    <div class="hint">仅观测 = v1 行为，零干预。自动双轨 = VPN 稳定开→摘劫持（轨道 B），稳定关→恢复劫持（轨道 A）；每次动作前强制 AGH 存活+5591 应答检查，动作全程写日志。DNS 集成 = 将 Meta 活动 profile 的 mihomo 上游指向 AGH（自动备份/自动重打/可一键还原）。</div>
+    <div id="st_env" style="margin-top:6px"></div>
+    <div class="hint">仅观测 = v1 行为，零干预。自动双轨 = VPN 稳定开→摘劫持（轨道 B），稳定关→恢复劫持（轨道 A）；每次动作前强制 AGH 存活+5591 应答检查，动作全程写日志。DNS 集成 = 将 Meta 活动 profile 的 mihomo 上游指向 AGH（自动备份/自动重打/可一键还原）。AGH 未安装/未运行时模块自动空载：探针跳过、不等待、不写网络。</div>
   </div>
 
   <div class="btns">
@@ -87,47 +96,100 @@
   'use strict';
   var MODPATH = '/data/adb/modules/rmg_netguard';
 
+  // ---- v2.1 busy manager: single-flight + visible progress + watchdog ----
+  var busy = false, busyTimer = null, busyStart = 0, WATCHDOG_MS = 90000;
+  var allBtns = Array.prototype.slice.call(document.querySelectorAll('button'));
+
+  function setBtnsDisabled(dis) {
+    allBtns.forEach(function (b) { b.disabled = dis; });
+  }
+  function busyOn(label) {
+    if (busy) { return false; }
+    busy = true;
+    busyStart = Date.now();
+    setBtnsDisabled(true);
+    var bar = document.getElementById('busybar');
+    bar.className = 'on';
+    busyTick(label);
+    busyTimer = window.setInterval(function () { busyTick(null); }, 1000);
+    // watchdog: never leave the panel locked forever (async bridge lost cb)
+    window.setTimeout(function () {
+      if (busy && busyStart && Date.now() - busyStart >= WATCHDOG_MS - 50) {
+        busyOff();
+        show('[超时] 命令超过 ' + (WATCHDOG_MS / 1000) + 's 未返回，已解除锁定。\n可能是内核桥接回调丢失，请重试或重新打开面板。');
+      }
+    }, WATCHDOG_MS);
+    return true;
+  }
+  function busyTick(label) {
+    var s = Math.floor((Date.now() - busyStart) / 1000);
+    document.getElementById('busytxt').textContent =
+      (label || document.getElementById('busytxt').textContent.replace(/ ….*$/, '')) + ' … ' + s + 's';
+  }
+  function busyOff() {
+    busy = false;
+    busyStart = 0;
+    if (busyTimer) { window.clearInterval(busyTimer); busyTimer = null; }
+    document.getElementById('busybar').className = '';
+    setBtnsDisabled(false);
+    // re-apply mode-button locked state from last known mode
+    var m = lastMode || 'observe';
+    document.getElementById('btn_obs').disabled = (m === 'observe');
+    document.getElementById('btn_auto').disabled = (m === 'auto');
+  }
+
   // KernelSU WebViewInterface contract (source-verified):
   //   exec(cmd)                     -> sync, returns stdout string
   //   exec(cmd, cb)                 -> async
   //   exec(cmd, optionsJSON, cb)    -> async; options MUST be a valid JSON
   //                                    string ("{}"); cb = window[fn](errno, stdout, stderr)
   function execCmd(cmd, cb) {
+    var settled = false;
+    function done(errno, stdout, stderr) {
+      if (settled) { return; }
+      settled = true;
+      cb(errno || 0, stdout || '', stderr || '');
+    }
     if (typeof ksu === 'undefined' || !ksu.exec) {
-      cb(-1, '', 'ksu bridge unavailable');
+      done(-1, '', 'ksu bridge unavailable');
       return;
     }
     var fn = '__ng_cb_' + Date.now() + '_' + Math.floor(Math.random() * 1000000);
-    var settled = false;
     window[fn] = function (errno, stdout, stderr) {
-      if (settled) { return; }
-      settled = true;
       try { delete window[fn]; } catch (e) {}
-      cb(errno || 0, stdout || '', stderr || '');
+      done(errno || 0, stdout || '', stderr || '');
     };
     try {
       ksu.exec(cmd, '{}', fn);
     } catch (e) {
       if (settled) { return; }
-      settled = true;
       try { delete window[fn]; } catch (e2) {}
       try {
-        var out = ksu.exec(cmd); // sync fallback
-        cb(0, out || '', '');
+        var out = ksu.exec(cmd); // sync fallback (blocks, but scripts are fast now)
+        done(0, out || '', '');
       } catch (e3) {
-        cb(-1, '', String(e3));
+        done(-1, '', String(e3));
       }
     }
   }
 
   function show(txt) {
-    document.getElementById('out').textContent = txt;
+    var el = document.getElementById('out');
+    el.textContent = txt;
+    el.className = '';
+  }
+  function showBusy(txt) {
+    var el = document.getElementById('out');
+    el.textContent = txt;
+    el.className = 'busyline';
   }
 
-  // run a webui.sh subcommand and dump output
+  // run a webui.sh subcommand and dump output (single-flight, with progress)
   function run(sub, done) {
-    show('执行 ' + sub + ' …');
+    if (!busyOn('执行 ' + sub)) { return; }
+    showBusy('执行 ' + sub + ' … 0s');
     execCmd('sh ' + MODPATH + '/scripts/webui.sh ' + sub, function (errno, stdout, stderr) {
+      busyOff();
       var text = stdout || '';
       if (stderr) { text += '\n[stderr]\n' + stderr; }
       if (errno) { text += '\n[exit=' + errno + ']'; }
@@ -136,8 +198,13 @@
     });
   }
 
+  var lastMode = null;
+
   function refreshStatus(done) {
+    if (busy) { if (done) { done(); } return; }   // never stack under a busy op
+    busyOn('刷新状态');
     execCmd('sh ' + MODPATH + '/scripts/webui.sh status', function (errno, stdout) {
+      busyOff();
       var lines = (stdout || '').split('\n');
       var s = null;
       for (var i = 0; i < lines.length; i++) {
@@ -157,15 +224,16 @@
       else                                        { stHtml = '<span class="badge ok">正常</span>'; }
       document.getElementById('st_state').innerHTML = stHtml;
       var modeTxt = (s && s.mode) ? s.mode : 'observe';
+      lastMode = modeTxt;
       var trackTxt = (s && s.track) ? s.track : '?';
       document.getElementById('st_modetrack').innerHTML =
-        '<span class="badge ' + (modeTxt === 'auto' ? 'accent' : 'mut') + '" style="background:' + (modeTxt === 'auto' ? '#14263a' : '#232a32') + ';color:' + (modeTxt === 'auto' ? '#7cc4f2' : '#9aa6b2') + '">' + modeTxt + '</span> ' +
+        '<span class="badge ' + (modeTxt === 'auto' ? 'info' : 'mut') + '">' + modeTxt + '</span> ' +
         '<span class="badge mut">轨道 ' + trackTxt + '</span>';
       document.getElementById('st_client').textContent = (s && s.client) || '--';
       document.getElementById('st_vpn').textContent = (s && s.vpn) ? (s.vpn_if || 'tun') : '无';
       document.getElementById('st_hijack').textContent = (s && s.hijack) ? '在挂' : '未挂载';
       document.getElementById('st_agh').textContent = (s ? s.agh_pid : '--') + ' / ' + (s && s.agh_port ? '监听' : '无');
-      document.getElementById('st_dns').textContent = (s ? s.dns_ms : '--') + ' ms';
+      document.getElementById('st_dns').textContent = (s ? (s.dns_ms || 'n/a') : '--');
       document.getElementById('st_ts').textContent = (s && s.ts) || '--';
       // mode/integration/probe parsed from webui.sh status text
       var mode2 = /mode=(\w+)/.exec(rest);
@@ -183,11 +251,13 @@
           (on ? (patched ? '已开启·已打补丁' : '已开启·未打补丁') : '关闭') + '</span>';
       } else { integEl.textContent = '--'; }
       var prEl = document.getElementById('st_probe');
-      if (fp) {
+      if (fp && fp[1] === 'SKIP') {
+        prEl.innerHTML = '<span class="badge mut">SKIP（AGH 未运行）</span>';
+      } else if (fp) {
         var v = fp[1];
         var w = fw ? fw[1] : '';
         var html = '<span class="badge ' + (v === 'BLOCKED' ? 'ok' : (v === 'OPEN' ? 'risk' : 'mut')) + '">' + v + '</span>';
-        if (w) {
+        if (w && w !== 'SKIP') {
           html += ' <span class="badge ' + (w === 'BLOCKED' ? 'ok' : (w === 'OPEN' ? 'risk' : 'warn')) + '">wedge ' + w + '</span>';
           if (v === 'BLOCKED' && w === 'UNKNOWN') {
             html += ' <span class="badge risk">AGH 退化签名·建议重启 AGH</span>';
@@ -200,6 +270,12 @@
         var age = parseInt(qa[1], 10);
         qaEl.innerHTML = '<span class="badge ' + (age >= 1800 ? 'warn' : 'mut') + '">' + (age >= 0 ? age + 's' : 'n/a') + '</span>';
       } else { qaEl.textContent = '--'; }
+      // environment banner (v2.1): tell the user WHY probes are skipped
+      var envEl = document.getElementById('st_env');
+      var aghDead = s && !s.agh_pid && !s.agh_port;
+      if (fp && fp[1] === 'SKIP' && aghDead) {
+        envEl.innerHTML = '<span class="badge info">AGH 未运行：过滤探针已跳过（即时返回，无等待）。未安装 AGH/Clash 时模块为纯观测空载。</span>';
+      } else { envEl.innerHTML = ''; }
       document.getElementById('btn_obs').disabled = (modeTxt === 'observe');
       document.getElementById('btn_auto').disabled = (modeTxt === 'auto');
       if (done) { done(); }
@@ -217,7 +293,10 @@
   }
 
   function integToggle() {
+    if (busy) { return; }
+    busyOn('读取集成状态');
     execCmd('sh ' + MODPATH + '/scripts/webui.sh status', function (e, stdout) {
+      busyOff();
       var m = /integration=(\w+)/.exec(stdout || '');
       var on = m && m[1] === 'on';
       var msg = on
@@ -240,7 +319,7 @@
   function autoRefresh() {
     var onoff = document.getElementById('autoref').checked;
     if (onoff && !timer) {
-      timer = window.setInterval(refreshStatus, 30000);
+      timer = window.setInterval(function () { if (!busy) { refreshStatus(); } }, 30000);
     } else if (!onoff && timer) {
       window.clearInterval(timer);
       timer = null;

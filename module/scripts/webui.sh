@@ -13,8 +13,19 @@ case "$1" in
     cat "$LOG_STATE" 2>/dev/null
     echo "---"
     sh "$MODDIR/scripts/controller.sh" status 2>/dev/null
-    echo "filter_probe=$(filter_probe)"
-    echo "filter_probe_wedge=$(filter_probe_wedge)"
+    # v2.1: probes only make sense while AGH is running; SKIP instantly
+    # otherwise (no 2x2s nc wait -> no WebUI freeze on "刷新全部").
+    if agh_running; then
+      r=$(filter_probe_pair)
+      p=${r%% *}; p=${p#P=}
+      w=${r##* }; w=${w#W=}
+      echo "filter_probe=$p"
+      echo "filter_probe_wedge=$w"
+    else
+      echo "filter_probe=SKIP"
+      echo "filter_probe_wedge=SKIP"
+      echo "agh_state=not_running"
+    fi
     echo "querylog_age=$(querylog_age)"
     sh "$MODDIR/scripts/config_toggle.sh" status 2>/dev/null
     ;;

@@ -131,10 +131,10 @@ do_auto() {
 }
 
 case "$1" in
-  apply) do_apply ;;
-  revert) do_revert ;;
+  apply) do_apply; exit $? ;;
+  revert) do_revert; exit $? ;;
   status) do_status ;;
-  auto) do_auto ;;
+  auto) do_auto; exit $? ;;
   *) echo "Usage: config_toggle.sh {apply|revert|status|auto}"; exit 1 ;;
 esac
 exit 0
