@@ -1,0 +1,9 @@
+# KernelSU module files must keep UNIX (LF) line endings: module.prop is
+# parsed line-wise and shell scripts must not carry CRLF. Without this,
+# core.autocrlf=true on a Windows checkout would rewrite them to CRLF.
+*.sh        text eol=lf
+*.prop      text eol=lf
+*.html      text eol=lf
+*.py        text eol=lf
+*.json      text eol=lf
+*.md        text eol=lf

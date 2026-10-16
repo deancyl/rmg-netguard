@@ -7,88 +7,131 @@
 <style>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: #121417; color: #d7dce2; font: 14px/1.55 -apple-system, "Segoe UI", Roboto, sans-serif; padding: 16px; }
-  h1 { font-size: 17px; margin-bottom: 2px; }
-  .sub { color: #7d8792; font-size: 12px; margin-bottom: 14px; }
+  body { background: #121417; color: #d7dce2; font: 14px/1.55 -apple-system, "Segoe UI", Roboto, sans-serif; }
+  .wrap { padding: 12px 14px 28px; }
+  h1 { font-size: 16px; margin-bottom: 1px; }
+  .sub { color: #7d8792; font-size: 12px; margin-bottom: 12px; }
   .card { background: #1b1f24; border: 1px solid #2a3038; border-radius: 10px; padding: 12px 14px; margin-bottom: 12px; }
   .card h2 { font-size: 13px; color: #9aa6b2; margin-bottom: 8px; font-weight: 600; }
-  .kv { display: flex; justify-content: space-between; padding: 3px 0; }
+  .kv { display: flex; justify-content: space-between; gap: 10px; padding: 3px 0; }
   .kv b { font-weight: 600; color: #e8edf2; text-align: right; }
-  .badge { padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; display: inline-block; }
+  .badge { padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; display: inline-block; white-space: nowrap; }
   .ok    { background: #14351f; color: #58d97a; }
   .warn  { background: #3a2a10; color: #f0b84a; }
   .risk  { background: #3d1414; color: #f26d6d; }
   .info  { background: #14263a; color: #5cb3f2; }
   .mut   { background: #232a32; color: #9aa6b2; }
   .btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
-  button { background: #232a32; color: #d7dce2; border: 1px solid #2f3944; border-radius: 8px; padding: 10px 8px; font-size: 13px; cursor: pointer; transition: opacity .15s; }
+  button { background: #232a32; color: #d7dce2; border: 1px solid #2f3944; border-radius: 8px; padding: 10px 8px; font-size: 13px; cursor: pointer; transition: opacity .15s; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
   button:active { background: #2c3540; }
   button.danger { border-color: #6b2b2b; color: #f29393; }
   button.accent { border-color: #2b4d6b; color: #7cc4f2; }
   button.wide { grid-column: span 2; }
-  button:disabled { opacity: 0.45; cursor: default; }
-  pre { background: #15181c; border: 1px solid #262c33; border-radius: 8px; padding: 10px; font: 12px/1.5 ui-monospace, Consolas, monospace; white-space: pre-wrap; word-break: break-all; color: #b9c4cf; max-height: 300px; overflow: auto; }
+  button.sm { padding: 6px 12px; font-size: 12px; }
+  button:disabled { opacity: 0.4; cursor: default; }
+  button svg { width: 15px; height: 15px; flex: 0 0 auto; }
+  pre { background: #15181c; border: 1px solid #262c33; border-radius: 8px; padding: 10px; font: 12px/1.5 ui-monospace, Consolas, monospace; white-space: pre-wrap; word-break: break-all; color: #b9c4cf; max-height: 320px; overflow: auto; }
   .hint { color: #66707b; font-size: 11px; margin-top: 8px; }
-  .row { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
   label.auto { color: #7d8792; font-size: 12px; }
-  /* v2.1 busy UI */
-  #busybar { display: none; align-items: center; gap: 10px; background: #14263a; border: 1px solid #24425f; border-radius: 8px; padding: 8px 12px; margin-bottom: 12px; font-size: 13px; color: #7cc4f2; }
+  details { background: #1b1f24; border: 1px solid #2a3038; border-radius: 10px; margin-bottom: 10px; overflow: hidden; }
+  details > summary { list-style: none; cursor: pointer; padding: 12px 14px; font-size: 13px; font-weight: 600; color: #9aa6b2; display: flex; align-items: center; gap: 8px; }
+  details > summary::-webkit-details-marker { display: none; }
+  details > summary::after { content: "▸"; margin-left: auto; color: #66707b; transition: transform .15s; }
+  details[open] > summary::after { transform: rotate(90deg); }
+  details .body { padding: 0 12px 12px; }
+
+  /* v2.2 always-visible feedback header */
+  .sticky { position: sticky; top: 0; z-index: 20; background: #121417; border-bottom: 1px solid #2a3038; padding: 10px 14px 8px; }
+  .statusline { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .fresh { margin-left: auto; color: #66707b; font-size: 11px; white-space: nowrap; }
+  .fresh.stale { color: #f0b84a; font-weight: 600; }
+  #busybar { display: none; align-items: center; gap: 10px; background: #14263a; border: 1px solid #24425f; border-radius: 8px; padding: 7px 11px; margin-top: 8px; font-size: 12px; color: #7cc4f2; }
   #busybar.on { display: flex; }
-  .spin { width: 14px; height: 14px; border: 2px solid #24425f; border-top-color: #7cc4f2; border-radius: 50%; animation: ngspin .8s linear infinite; flex: 0 0 auto; }
+  .spin { width: 13px; height: 13px; border: 2px solid #24425f; border-top-color: #7cc4f2; border-radius: 50%; animation: ngspin .8s linear infinite; flex: 0 0 auto; }
   @keyframes ngspin { to { transform: rotate(360deg); } }
-  #out.busyline { color: #7cc4f2; }
+  #result { display: none; margin-top: 8px; border-radius: 8px; padding: 8px 11px; font-size: 12px; border: 1px solid #262c33; background: #171b1f; color: #b9c4cf; white-space: pre-wrap; word-break: break-word; max-height: 130px; overflow: auto; }
+  #result.on { display: block; }
+  #result.ok   { border-color: #245c34; background: #12281a; color: #8fe0a2; }
+  #result.err  { border-color: #6b2b2b; background: #2a1414; color: #f29393; }
+  #result.work { border-color: #24425f; background: #14263a; color: #7cc4f2; }
+  #result.note { border-color: #4a3c17; background: #2a2410; color: #f0b84a; }
+  #confbar { display: none; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px; border: 1px solid #6b2b2b; background: #2a1414; border-radius: 8px; padding: 8px 11px; font-size: 12px; color: #f29393; }
+  #confbar.on { display: flex; }
+  #confbar span { flex: 1 1 100%; }
 </style>
 </head>
 <body>
-  <h1>RMG NetGuard <span style="font-size:12px;color:#7d8792">v2.1.0</span></h1>
-  <div class="sub">DNS / VPN 双轨接管守护 · 默认仅观测 · 切换均健康门控且可逆</div>
-
-  <div id="busybar"><span class="spin"></span><span id="busytxt">处理中…</span></div>
-
-  <div class="card">
-    <h2>实时状态（90s 采样）</h2>
-    <div class="kv"><span>状态判定</span><b id="st_state">--</b></div>
-    <div class="kv"><span>模式 / 轨道</span><b id="st_modetrack">--</b></div>
-    <div class="kv"><span>运行客户端</span><b id="st_client">--</b></div>
-    <div class="kv"><span>VPN 接口</span><b id="st_vpn">--</b></div>
-    <div class="kv"><span>AGH 53 劫持</span><b id="st_hijack">--</b></div>
-    <div class="kv"><span>AGH 进程 / 5591</span><b id="st_agh">--</b></div>
-    <div class="kv"><span>系统 DNS 延迟</span><b id="st_dns">--</b></div>
-    <div class="kv"><span>采样时间</span><b id="st_ts">--</b></div>
+  <!-- Always-visible feedback header: status + freshness + progress + result +
+       in-panel confirmation. Sticky so it never scrolls out of sight. -->
+  <div class="sticky">
+    <div class="statusline">
+      <span id="hb_state" class="badge mut">读取中…</span>
+      <span id="hb_mode" class="badge mut">--</span>
+      <span id="hb_track" class="badge mut">--</span>
+      <span id="hb_agh" class="badge mut">AGH --</span>
+      <span id="hb_probe" class="badge mut">探针 --</span>
+      <span class="fresh" id="hb_fresh">--</span>
+    </div>
+    <div id="busybar" role="status" aria-live="polite"><span class="spin"></span><span id="busytxt">处理中…</span></div>
+    <div id="result" role="status" aria-live="polite"></div>
+    <div id="confbar"><span id="conftxt"></span><button class="sm danger" id="confyes">确认执行</button><button class="sm" id="confno">取消</button></div>
   </div>
 
-  <div class="card">
-    <h2>模式与集成（开启即代表授权模块执行对应动作）</h2>
+  <div class="wrap">
+    <h1>RMG NetGuard <span style="font-size:12px;color:#7d8792">v2.2.0</span></h1>
+    <div class="sub">DNS / VPN 双轨守护 · 默认只看不动 · 所有切换健康门控且可逆</div>
+
+    <div class="hint" style="margin:-6px 0 12px">状态每 90 秒由后台刷新一次；此处显示的是最近一次采样，右上角为距今时间。</div>
+
+    <details>
+      <summary>当前拓扑</summary>
+      <div class="body">
+      <div class="kv"><span>状态</span><b id="st_state">--</b></div>
+      <div class="kv"><span>模式 / 轨道</span><b id="st_modetrack">--</b></div>
+      <div class="kv"><span>运行中的客户端</span><b id="st_client">--</b></div>
+      <div class="kv"><span>VPN 接口</span><b id="st_vpn">--</b></div>
+      <div class="kv"><span>AGH 劫持</span><b id="st_hijack">--</b></div>
+      <div class="kv"><span>AGH 进程 / 5591</span><b id="st_agh">--</b></div>
+      <div class="kv"><span>系统 DNS 延迟</span><b id="st_dns">--</b></div>
+      <div class="kv"><span>采样时间</span><b id="st_ts">--</b></div>
+      </div>
+    </details>
+
+    <div class="card">
+      <h2>模式与 DNS 集成</h2>
+      <div class="btns">
+        <button id="btn_obs" onclick="askMode('observe')">只看不动</button>
+        <button id="btn_auto" onclick="askMode('auto')">自动切换</button>
+        <button class="accent wide" id="btn_integ" onclick="askInteg()">DNS 集成：读取中…</button>
+      </div>
+      <div class="kv"><span>当前模式</span><b id="st_mode2">--</b></div>
+      <div class="kv"><span>集成状态</span><b id="st_integ">--</b></div>
+      <div class="kv"><span>过滤探针</span><b id="st_probe">--</b></div>
+      <div class="kv"><span>AGH 日志年龄</span><b id="st_qage">--</b></div>
+      <div id="st_env" style="margin-top:6px"></div>
+      <div class="hint">只看不动 = 零干预，只记录状态。自动切换 = VPN 稳定开启后摘掉劫持、关闭后恢复劫持；每次动作前都强制检查 AGH 存活与 5591 应答。DNS 集成 = 把 Clash Meta 活动配置的上游指向 AGH（自动备份、自动重打、可一键还原）。AGH 未安装时模块自动空载，不等待、不写网络。</div>
+    </div>
+
     <div class="btns">
-      <button id="btn_obs" onclick="setMode('observe')">仅观测模式</button>
-      <button id="btn_auto" onclick="setMode('auto')">自动双轨模式</button>
-      <button class="accent wide" onclick="integToggle()">切换 DNS 集成（Meta profile 补丁）</button>
+      <button onclick="refreshAll()">刷新状态</button>
+      <button onclick="run('probe')">一键体检</button>
+      <button onclick="run('audit')">规则审计</button>
+      <button onclick="run('stats')">拦截统计</button>
+      <button class="wide" onclick="run('log')">事件日志（最近 20 条）</button>
+      <button class="danger" onclick="askCtl('detach')">摘除 AGH 劫持</button>
+      <button onclick="askCtl('attach')">恢复 AGH 劫持</button>
     </div>
-    <div class="kv"><span>当前模式</span><b id="st_mode2">--</b></div>
-    <div class="kv"><span>集成状态</span><b id="st_integ">--</b></div>
-    <div class="kv"><span>过滤探针</span><b id="st_probe">--</b></div>
-    <div class="kv"><span>AGH 日志年龄</span><b id="st_qage">--</b></div>
-    <div id="st_env" style="margin-top:6px"></div>
-    <div class="hint">仅观测 = v1 行为，零干预。自动双轨 = VPN 稳定开→摘劫持（轨道 B），稳定关→恢复劫持（轨道 A）；每次动作前强制 AGH 存活+5591 应答检查，动作全程写日志。DNS 集成 = 将 Meta 活动 profile 的 mihomo 上游指向 AGH（自动备份/自动重打/可一键还原）。AGH 未安装/未运行时模块自动空载：探针跳过、不等待、不写网络。</div>
-  </div>
 
-  <div class="btns">
-    <button onclick="refreshAll()">刷新全部</button>
-    <button onclick="run('probe')">一键体检</button>
-    <button onclick="run('audit')">规则健康审计</button>
-    <button onclick="run('stats')">AGH 拦截统计</button>
-    <button class="wide" onclick="run('log')">事件日志（最近 20 条）</button>
-    <button class="danger" onclick="ctl('detach')">手动摘除 AGH 劫持</button>
-    <button onclick="ctl('attach')">手动恢复 AGH 劫持</button>
-  </div>
+    <details>
+      <summary>详细输出</summary>
+      <div class="body"><pre id="out">就绪。</pre></div>
+    </details>
 
-  <div class="card">
-    <h2>输出</h2>
-    <pre id="out">就绪。</pre>
     <div class="row">
-      <input type="checkbox" id="autoref"> <label class="auto" for="autoref">每 30 秒自动刷新状态</label>
+      <input type="checkbox" id="autoref" checked> <label class="auto" for="autoref">每 30 秒自动刷新状态</label>
     </div>
-    <div class="hint">安全边界：模块只动 nat OUTPUT 上那一条 jump（链体永不触碰）；AGH 不应答时任何切换都会被拒绝；卸载时自动还原劫持与 profile 补丁。</div>
+    <div class="hint">安全边界：模块只操作 nat OUTPUT 上那一条跳转规则（链体从不触碰）；AGH 不应答时任何切换都会被拒绝；卸载时自动还原劫持与配置补丁。</div>
   </div>
 
 <script>
@@ -96,35 +139,71 @@
   'use strict';
   var MODPATH = '/data/adb/modules/rmg_netguard';
 
-  // ---- v2.1 busy manager: single-flight + visible progress + watchdog ----
+  // ---- v2.2 feedback model ------------------------------------------------
+  // Design goals, in order:
+  //   1. every tap gets an immediate, visible acknowledgement (result strip)
+  //   2. no tap is ever silently dropped (busy taps get a note, not a no-op)
+  //   3. nothing blocks the JS thread (no window.confirm/alert/prompt)
+  //   4. progress lives in the sticky header, so it cannot scroll out of view
+  // The KernelSU bridge is the only async boundary; all rendering funnels
+  // through render()/setResult() to keep state single-sourced.
   var busy = false, busyTimer = null, busyStart = 0, WATCHDOG_MS = 90000;
-  var allBtns = Array.prototype.slice.call(document.querySelectorAll('button'));
+  var allBtns = [];
+  var lastMode = 'observe', lastInteg = null;
+  var lastSnapshot = null, lastRest = '';
+  var pendingConfirm = null, confTimer = null;
 
+  function collectButtons() {
+    allBtns = Array.prototype.slice.call(document.querySelectorAll('.btns button'));
+  }
   function setBtnsDisabled(dis) {
     allBtns.forEach(function (b) { b.disabled = dis; });
+    if (dis) {
+      allBtns.forEach(function (b) { b.setAttribute('aria-busy', 'true'); });
+    } else {
+      allBtns.forEach(function (b) { b.removeAttribute('aria-busy'); });
+    }
+    // Re-apply the intrinsic "already in this mode" lock once free.
+    if (!dis) {
+      document.getElementById('btn_obs').disabled = (lastMode === 'observe');
+      document.getElementById('btn_auto').disabled = (lastMode === 'auto');
+      applyIntegLabel();
+    }
   }
+
+  // ---- result strip: the single place feedback appears ----
+  function setResult(kind, text) {
+    var el = document.getElementById('result');
+    el.className = 'on' + (kind ? ' ' + kind : '');
+    el.textContent = text;
+  }
+  function clearResult() {
+    var el = document.getElementById('result');
+    el.className = '';
+    el.textContent = '';
+  }
+
   function busyOn(label) {
     if (busy) { return false; }
     busy = true;
     busyStart = Date.now();
     setBtnsDisabled(true);
-    var bar = document.getElementById('busybar');
-    bar.className = 'on';
+    document.getElementById('busybar').className = 'on';
     busyTick(label);
     busyTimer = window.setInterval(function () { busyTick(null); }, 1000);
     // watchdog: never leave the panel locked forever (async bridge lost cb)
     window.setTimeout(function () {
       if (busy && busyStart && Date.now() - busyStart >= WATCHDOG_MS - 50) {
         busyOff();
-        show('[超时] 命令超过 ' + (WATCHDOG_MS / 1000) + 's 未返回，已解除锁定。\n可能是内核桥接回调丢失，请重试或重新打开面板。');
+        setResult('err', '[超时] 命令超过 ' + (WATCHDOG_MS / 1000) + 's 未返回，已解除锁定。\n可能是桥接回调丢失，请重试或重新打开面板。');
       }
     }, WATCHDOG_MS);
     return true;
   }
   function busyTick(label) {
     var s = Math.floor((Date.now() - busyStart) / 1000);
-    document.getElementById('busytxt').textContent =
-      (label || document.getElementById('busytxt').textContent.replace(/ ….*$/, '')) + ' … ' + s + 's';
+    var cur = document.getElementById('busytxt').textContent.replace(/….*$/, '');
+    document.getElementById('busytxt').textContent = (label || cur) + '…' + s + 's';
   }
   function busyOff() {
     busy = false;
@@ -132,10 +211,6 @@
     if (busyTimer) { window.clearInterval(busyTimer); busyTimer = null; }
     document.getElementById('busybar').className = '';
     setBtnsDisabled(false);
-    // re-apply mode-button locked state from last known mode
-    var m = lastMode || 'observe';
-    document.getElementById('btn_obs').disabled = (m === 'observe');
-    document.getElementById('btn_auto').disabled = (m === 'auto');
   }
 
   // KernelSU WebViewInterface contract (source-verified):
@@ -143,6 +218,8 @@
   //   exec(cmd, cb)                 -> async
   //   exec(cmd, optionsJSON, cb)    -> async; options MUST be a valid JSON
   //                                    string ("{}"); cb = window[fn](errno, stdout, stderr)
+  // The Manager runs the command synchronously on the Java side and only then
+  // evaluates our callback, so cb fires exactly once, after completion.
   function execCmd(cmd, cb) {
     var settled = false;
     function done(errno, stdout, stderr) {
@@ -156,7 +233,7 @@
     }
     var fn = '__ng_cb_' + Date.now() + '_' + Math.floor(Math.random() * 1000000);
     window[fn] = function (errno, stdout, stderr) {
-      try { delete window[fn]; } catch (e) {}
+      try { delete window[fn]; } catch (e) { window[fn] = undefined; }
       done(errno || 0, stdout || '', stderr || '');
     };
     try {
@@ -165,7 +242,7 @@
       if (settled) { return; }
       try { delete window[fn]; } catch (e2) {}
       try {
-        var out = ksu.exec(cmd); // sync fallback (blocks, but scripts are fast now)
+        var out = ksu.exec(cmd); // sync fallback for very old Managers
         done(0, out || '', '');
       } catch (e3) {
         done(-1, '', String(e3));
@@ -174,152 +251,290 @@
   }
 
   function show(txt) {
-    var el = document.getElementById('out');
-    el.textContent = txt;
-    el.className = '';
-  }
-  function showBusy(txt) {
-    var el = document.getElementById('out');
-    el.textContent = txt;
-    el.className = 'busyline';
+    document.getElementById('out').textContent = txt;
   }
 
-  // run a webui.sh subcommand and dump output (single-flight, with progress)
+  // Human labels for each webui.sh subcommand (used in progress + result).
+  var LABEL = {
+    probe: '一键体检',
+    audit: '规则审计',
+    stats: '拦截统计',
+    log: '事件日志',
+    mode_auto: '切换到自动切换',
+    mode_observe: '切换到只看不动',
+    integ_on: '开启 DNS 集成',
+    integ_off: '关闭 DNS 集成',
+    detach: '摘除 AGH 劫持',
+    attach: '恢复 AGH 劫持'
+  };
+
+  // run a webui.sh subcommand (single-flight). A tap that lands while another
+  // command is in flight is acknowledged instead of being dropped silently.
   function run(sub, done) {
-    if (!busyOn('执行 ' + sub)) { return; }
-    showBusy('执行 ' + sub + ' … 0s');
+    if (!busyOn(LABEL[sub] || ('执行 ' + sub))) {
+      setResult('note', '上一条命令还在执行，请稍候再点（按钮会在完成后自动恢复）。');
+      return;
+    }
+    setResult('work', '已发送：' + (LABEL[sub] || sub) + '，执行中…');
     execCmd('sh ' + MODPATH + '/scripts/webui.sh ' + sub, function (errno, stdout, stderr) {
       busyOff();
       var text = stdout || '';
       if (stderr) { text += '\n[stderr]\n' + stderr; }
-      if (errno) { text += '\n[exit=' + errno + ']'; }
+      if (errno) { text += '\n[退出码 ' + errno + ']'; }
       show(text || '(无输出)');
+      var first = (stdout || '').split('\n')[0] || '';
+      setResult(errno ? 'err' : 'ok',
+        (errno ? '失败：' : '完成：') + (LABEL[sub] || sub) + (first ? '\n' + first : ''));
       if (done) { done(); }
     });
   }
 
-  var lastMode = null;
+  // Render the sticky header from the last known snapshot + live parsed state.
+  function renderHeader(s, rest) {
+    var stateBadge;
+    if (!s) {
+      stateBadge = { cls: 'mut', txt: '读取中…' };
+    } else if (s.state === 'RISK_COEXIST') { stateBadge = { cls: 'risk', txt: '串联风险' }; }
+    else if (s.state === 'INCONSISTENT')   { stateBadge = { cls: 'warn', txt: '状态不一致' }; }
+    else if (s.state === 'DOWN_PORT')      { stateBadge = { cls: 'risk', txt: 'DNS 黑洞' }; }
+    else                                    { stateBadge = { cls: 'ok',   txt: '正常' }; }
+    document.getElementById('hb_state').className = 'badge ' + stateBadge.cls;
+    document.getElementById('hb_state').textContent = stateBadge.txt;
 
-  function refreshStatus(done) {
-    if (busy) { if (done) { done(); } return; }   // never stack under a busy op
-    busyOn('刷新状态');
-    execCmd('sh ' + MODPATH + '/scripts/webui.sh status', function (errno, stdout) {
-      busyOff();
-      var lines = (stdout || '').split('\n');
-      var s = null;
-      for (var i = 0; i < lines.length; i++) {
-        var L = lines[i];
-        if (L.charAt(0) === '{') {
-          try { s = JSON.parse(L); } catch (e) {}
-        }
-      }
-      var rest = lines.filter(function (x) { return x.charAt(0) !== '{'; }).join('\n').trim();
-      // state card
-      var stHtml;
-      if (!s) {
-        stHtml = '<span class="badge info">尚无快照</span>';
-      } else if (s.state === 'RISK_COEXIST')      { stHtml = '<span class="badge risk">串联风险 RISK</span>'; }
-      else if (s.state === 'INCONSISTENT')        { stHtml = '<span class="badge warn">不一致</span>'; }
-      else if (s.state === 'DOWN_PORT')           { stHtml = '<span class="badge risk">DNS 黑洞</span>'; }
-      else                                        { stHtml = '<span class="badge ok">正常</span>'; }
-      document.getElementById('st_state').innerHTML = stHtml;
-      var modeTxt = (s && s.mode) ? s.mode : 'observe';
-      lastMode = modeTxt;
-      var trackTxt = (s && s.track) ? s.track : '?';
-      document.getElementById('st_modetrack').innerHTML =
-        '<span class="badge ' + (modeTxt === 'auto' ? 'info' : 'mut') + '">' + modeTxt + '</span> ' +
-        '<span class="badge mut">轨道 ' + trackTxt + '</span>';
-      document.getElementById('st_client').textContent = (s && s.client) || '--';
-      document.getElementById('st_vpn').textContent = (s && s.vpn) ? (s.vpn_if || 'tun') : '无';
-      document.getElementById('st_hijack').textContent = (s && s.hijack) ? '在挂' : '未挂载';
-      document.getElementById('st_agh').textContent = (s ? s.agh_pid : '--') + ' / ' + (s && s.agh_port ? '监听' : '无');
-      document.getElementById('st_dns').textContent = (s ? (s.dns_ms || 'n/a') : '--');
-      document.getElementById('st_ts').textContent = (s && s.ts) || '--';
-      // mode/integration/probe parsed from webui.sh status text
-      var mode2 = /mode=(\w+)/.exec(rest);
-      var integ = /integration=(\w+)/.exec(rest);
-      var prof = /profile=(\w+)/.exec(rest);
+    var modeTxt = (s && s.mode) ? s.mode : lastMode;
+    if (modeTxt) { lastMode = modeTxt; }
+    var mBadge = document.getElementById('hb_mode');
+    mBadge.className = 'badge ' + (modeTxt === 'auto' ? 'info' : 'mut');
+    mBadge.textContent = (modeTxt === 'auto' ? '自动切换' : '只看不动');
+
+    var trackTxt = (s && s.track) ? s.track : '?';
+    var tBadge = document.getElementById('hb_track');
+    tBadge.className = 'badge mut';
+    tBadge.textContent = (trackTxt === 'A' ? '劫持已挂' : (trackTxt === 'B' ? '劫持已摘' : '轨道 ?'));
+
+    var aBadge = document.getElementById('hb_agh');
+    if (s && s.agh_pid) {
+      aBadge.className = 'badge ' + (s.agh_port ? 'ok' : 'warn');
+      aBadge.textContent = 'AGH ' + s.agh_pid + (s.agh_port ? ' 监听' : ' 无监听');
+    } else {
+      aBadge.className = 'badge mut';
+      aBadge.textContent = 'AGH 未运行';
+    }
+
+    // freshness: beats between the snapshot's own timestamp and now
+    var freshEl = document.getElementById('hb_fresh');
+    if (s && s.ts) {
+      var t = Date.parse(s.ts.replace(' ', 'T'));
+      if (!isNaN(t)) {
+        var age = Math.max(0, Math.floor((Date.now() - t) / 1000));
+        freshEl.textContent = age < 90 ? ('快照 ' + age + 's 前') : ('快照 ' + Math.floor(age / 60) + ' 分钟前');
+        freshEl.className = 'fresh' + (age > 180 ? ' stale' : '');
+      } else { freshEl.textContent = s.ts; }
+    } else { freshEl.textContent = '--'; }
+
+    if (typeof rest === 'string') {
       var fp = /filter_probe=(\w+)/.exec(rest);
       var fw = /filter_probe_wedge=(\w+)/.exec(rest);
-      var qa = /querylog_age=(-?\d+)/.exec(rest);
-      document.getElementById('st_mode2').textContent = mode2 ? mode2[1] : '--';
-      var integEl = document.getElementById('st_integ');
-      if (integ) {
-        var on = integ[1] === 'on';
-        var patched = prof && prof[1] === 'patched';
-        integEl.innerHTML = '<span class="badge ' + (on ? (patched ? 'ok' : 'warn') : 'mut') + '">' +
-          (on ? (patched ? '已开启·已打补丁' : '已开启·未打补丁') : '关闭') + '</span>';
-      } else { integEl.textContent = '--'; }
-      var prEl = document.getElementById('st_probe');
-      if (fp && fp[1] === 'SKIP') {
-        prEl.innerHTML = '<span class="badge mut">SKIP（AGH 未运行）</span>';
-      } else if (fp) {
-        var v = fp[1];
-        var w = fw ? fw[1] : '';
-        var html = '<span class="badge ' + (v === 'BLOCKED' ? 'ok' : (v === 'OPEN' ? 'risk' : 'mut')) + '">' + v + '</span>';
-        if (w && w !== 'SKIP') {
-          html += ' <span class="badge ' + (w === 'BLOCKED' ? 'ok' : (w === 'OPEN' ? 'risk' : 'warn')) + '">wedge ' + w + '</span>';
-          if (v === 'BLOCKED' && w === 'UNKNOWN') {
-            html += ' <span class="badge risk">AGH 退化签名·建议重启 AGH</span>';
-          }
+      var pBadge = document.getElementById('hb_probe');
+      if (fp && fp[1] === 'SKIP') { pBadge.className = 'badge mut'; pBadge.textContent = '探针跳过'; }
+      else if (fp) {
+        var v = fp[1], w = fw ? fw[1] : '';
+        var cls = (v === 'BLOCKED' ? 'ok' : (v === 'OPEN' ? 'risk' : 'mut'));
+        pBadge.className = 'badge ' + ((v === 'BLOCKED' && w === 'UNKNOWN') ? 'warn' : cls);
+        pBadge.textContent = '探针 ' + v + (w && w !== 'SKIP' ? ' / ' + w : '');
+      }
+      // no fp (status_fast): keep the last painted probe badge untouched
+    }
+  }
+
+  // Parse one webui.sh output blob and paint the whole card set.
+  function renderStatus(stdout) {
+    var lines = (stdout || '').split('\n');
+    var s = null;
+    for (var i = 0; i < lines.length; i++) {
+      var L = lines[i];
+      if (L.charAt(0) === '{') {
+        try { s = JSON.parse(L); } catch (e) {}
+      }
+    }
+    var rest = lines.filter(function (x) { return x.charAt(0) !== '{'; }).join('\n').trim();
+    lastSnapshot = s;
+    lastRest = rest;
+    renderHeader(s, rest);
+
+    // state card
+    var stHtml;
+    if (!s) { stHtml = '<span class="badge info">尚无快照</span>'; }
+    else if (s.state === 'RISK_COEXIST') { stHtml = '<span class="badge risk">串联风险 RISK</span>'; }
+    else if (s.state === 'INCONSISTENT') { stHtml = '<span class="badge warn">不一致</span>'; }
+    else if (s.state === 'DOWN_PORT')    { stHtml = '<span class="badge risk">DNS 黑洞</span>'; }
+    else                                 { stHtml = '<span class="badge ok">正常</span>'; }
+    document.getElementById('st_state').innerHTML = stHtml;
+    var modeTxt = (s && s.mode) ? s.mode : 'observe';
+    lastMode = modeTxt;
+    var trackTxt = (s && s.track) ? s.track : '?';
+    document.getElementById('st_modetrack').innerHTML =
+      '<span class="badge ' + (modeTxt === 'auto' ? 'info' : 'mut') + '">' +
+      (modeTxt === 'auto' ? '自动切换' : '只看不动') + '</span> ' +
+      '<span class="badge mut">' + (trackTxt === 'A' ? '劫持已挂' : (trackTxt === 'B' ? '劫持已摘' : '轨道 ?')) + '</span>';
+    document.getElementById('st_client').textContent = (s && s.client) || '--';
+    document.getElementById('st_vpn').textContent = (s && s.vpn) ? (s.vpn_if || 'tun') : '无';
+    document.getElementById('st_hijack').textContent = (s && s.hijack) ? '在挂' : '未挂载';
+    document.getElementById('st_agh').textContent = (s ? s.agh_pid : '--') + ' / ' + (s && s.agh_port ? '监听' : '无');
+    document.getElementById('st_dns').textContent = (s ? (s.dns_ms || 'n/a') : '--');
+    document.getElementById('st_ts').textContent = (s && s.ts) || '--';
+
+    var mode2 = /mode=(\w+)/.exec(rest);
+    var integ = /integration=(\w+)/.exec(rest);
+    var prof = /profile=(\w+)/.exec(rest);
+    var fp = /filter_probe=(\w+)/.exec(rest);
+    var fw = /filter_probe_wedge=(\w+)/.exec(rest);
+    var qa = /querylog_age=(-?\d+)/.exec(rest);
+    document.getElementById('st_mode2').textContent = mode2 ? (mode2[1] === 'auto' ? '自动切换' : '只看不动') : '--';
+
+    if (integ) {
+      var patched = prof && prof[1] === 'patched';
+      // Truth source: whether the active profile is actually patched. The
+      // flag file is only a fallback (it can drift if config_toggle was
+      // invoked directly rather than through webui.sh integ_on/off).
+      lastInteg = patched ? true : (integ[1] === 'on');
+      document.getElementById('st_integ').innerHTML =
+        '<span class="badge ' + (lastInteg ? (patched ? 'ok' : 'warn') : 'mut') + '">' +
+        (lastInteg ? (patched ? '已开启·已打补丁' : '已开启·未打补丁') : '关闭') + '</span>';
+    } else {
+      lastInteg = null;
+      document.getElementById('st_integ').textContent = '--';
+    }
+    applyIntegLabel();
+
+    var prEl = document.getElementById('st_probe');
+    if (fp && fp[1] === 'SKIP') {
+      prEl.innerHTML = '<span class="badge mut">SKIP（AGH 未运行）</span>';
+    } else if (fp) {
+      var v = fp[1];
+      var w = fw ? fw[1] : '';
+      var html = '<span class="badge ' + (v === 'BLOCKED' ? 'ok' : (v === 'OPEN' ? 'risk' : 'mut')) + '">' + v + '</span>';
+      if (w && w !== 'SKIP') {
+        html += ' <span class="badge ' + (w === 'BLOCKED' ? 'ok' : (w === 'OPEN' ? 'risk' : 'warn')) + '">wedge ' + w + '</span>';
+        if (v === 'BLOCKED' && w === 'UNKNOWN') {
+          html += ' <span class="badge risk">AGH 退化·建议重启</span>';
         }
-        prEl.innerHTML = html;
-      } else { prEl.textContent = '--'; }
-      var qaEl = document.getElementById('st_qage');
-      if (qa) {
-        var age = parseInt(qa[1], 10);
-        qaEl.innerHTML = '<span class="badge ' + (age >= 1800 ? 'warn' : 'mut') + '">' + (age >= 0 ? age + 's' : 'n/a') + '</span>';
-      } else { qaEl.textContent = '--'; }
-      // environment banner (v2.1): tell the user WHY probes are skipped
-      var envEl = document.getElementById('st_env');
-      var aghDead = s && !s.agh_pid && !s.agh_port;
-      if (fp && fp[1] === 'SKIP' && aghDead) {
-        envEl.innerHTML = '<span class="badge info">AGH 未运行：过滤探针已跳过（即时返回，无等待）。未安装 AGH/Clash 时模块为纯观测空载。</span>';
-      } else { envEl.innerHTML = ''; }
-      document.getElementById('btn_obs').disabled = (modeTxt === 'observe');
-      document.getElementById('btn_auto').disabled = (modeTxt === 'auto');
+      }
+      prEl.innerHTML = html;
+    }
+    // note: status_fast omits the probes, so keep the last painted value intact
+
+    var qaEl = document.getElementById('st_qage');
+    if (qa) {
+      var age = parseInt(qa[1], 10);
+      qaEl.innerHTML = '<span class="badge ' + (age >= 1800 ? 'warn' : 'mut') + '">' + (age >= 0 ? age + 's' : 'n/a') + '</span>';
+    } else { qaEl.textContent = '--'; }
+
+    var envEl = document.getElementById('st_env');
+    var aghDead = s && !s.agh_pid && !s.agh_port;
+    if (fp && fp[1] === 'SKIP' && aghDead) {
+      envEl.innerHTML = '<span class="badge info">AGH 未运行：过滤探针已跳过。未安装 AGH/Clash 时模块为纯观测空载。</span>';
+    } else { envEl.innerHTML = ''; }
+
+    document.getElementById('btn_obs').disabled = (modeTxt === 'observe');
+    document.getElementById('btn_auto').disabled = (modeTxt === 'auto');
+  }
+
+  // Light refresh (status_fast): reads state.json + controller + config status,
+  // skips the slow DNS probes. Used on open, on the refresh button and by the
+  // 30s poll, so the panel is never locked for seconds at a time.
+  function refreshFast(done) {
+    if (busy) { if (done) { done(); } return; }
+    busyOn('刷新状态');
+    execCmd('sh ' + MODPATH + '/scripts/webui.sh status_fast', function (errno, stdout) {
+      busyOff();
+      renderStatus(stdout);
+      if (errno) { setResult('err', '刷新失败（退出码 ' + errno + '）'); }
       if (done) { done(); }
     });
   }
 
-  function refreshAll() { refreshStatus(); }
-
-  function setMode(m) {
-    var msg = m === 'auto'
-      ? '确认切换到【自动双轨】模式？\n\n模块将随 VPN 开/关自动摘/恢复 AGH 53 劫持（单条规则、健康门控、全程日志）。\n随时可切回仅观测。'
-      : '确认切换回【仅观测】模式？\n\n模块将停止自动切换（保持当前拓扑不变）。';
-    if (!window.confirm(msg)) { return; }
-    run(m === 'auto' ? 'mode_auto' : 'mode_observe', refreshStatus);
-  }
-
-  function integToggle() {
-    if (busy) { return; }
-    busyOn('读取集成状态');
-    execCmd('sh ' + MODPATH + '/scripts/webui.sh status', function (e, stdout) {
+  // Full status (probes included). Only used after actions that change the
+  // filter path, and by the explicit "刷新状态" button when the user wants
+  // probe badges refreshed.
+  function refreshFull(done) {
+    if (busy) { if (done) { done(); } return; }
+    busyOn('刷新状态（含探针）');
+    setResult('work', '正在刷新状态（含过滤探针）…');
+    execCmd('sh ' + MODPATH + '/scripts/webui.sh status', function (errno, stdout) {
       busyOff();
-      var m = /integration=(\w+)/.exec(stdout || '');
-      var on = m && m[1] === 'on';
-      var msg = on
-        ? '确认关闭 DNS 集成？\n\n将从备份还原 Meta 活动 profile（移除 NS5591 补丁），Clash Meta 需重开 VPN 生效。'
-        : '确认开启 DNS 集成？\n\n将备份并补丁 Meta 活动 profile（nameserver -> 127.0.0.1:5591），订阅更新后自动重打；Clash Meta 需重开 VPN 生效。\n随时可在此一键还原。';
-      if (!window.confirm(msg)) { return; }
-      run(on ? 'integ_off' : 'integ_on', refreshStatus);
+      renderStatus(stdout);
+      if (errno) { setResult('err', '刷新失败（退出码 ' + errno + '）'); }
+      else { setResult('ok', '状态已刷新。'); }
+      if (done) { done(); }
     });
   }
 
-  function ctl(action) {
-    var msg = action === 'detach'
-      ? '确认手动摘除 AGH 53 劫持？（链体保留，可随时恢复）'
-      : '确认恢复 AGH 53 劫持？（插入 nat OUTPUT 位置 1）';
-    if (!window.confirm(msg)) { return; }
-    run(action, refreshStatus);
+  function refreshAll() { refreshFull(); }
+
+  // ---- in-panel confirmation ----------------------------------------------
+  // Replaces window.confirm, which is a blocking native dialog: if it is ever
+  // not answered the whole JS thread hangs and the panel appears dead. This
+  // bar is plain DOM, cannot block anything, and auto-dismisses after 8s.
+  function applyIntegLabel() {
+    var b = document.getElementById('btn_integ');
+    if (!b) { return; }
+    if (lastInteg === true)  { b.textContent = '关闭 DNS 集成'; }
+    else if (lastInteg === false) { b.textContent = '开启 DNS 集成'; }
+    else { b.textContent = 'DNS 集成：状态未知'; }
+  }
+  function closeConfirm() {
+    pendingConfirm = null;
+    if (confTimer) { window.clearTimeout(confTimer); confTimer = null; }
+    var bar = document.getElementById('confbar');
+    bar.className = '';
+    document.getElementById('conftxt').textContent = '';
+  }
+  function openConfirm(text, onYes) {
+    pendingConfirm = onYes;
+    document.getElementById('conftxt').textContent = text;
+    document.getElementById('confbar').className = 'on';
+    if (confTimer) { window.clearTimeout(confTimer); }
+    confTimer = window.setTimeout(function () {
+      if (pendingConfirm) { closeConfirm(); setResult('note', '已取消：确认超时。'); }
+    }, 8000);
+  }
+  function askMode(m) {
+    if (busy) { setResult('note', '当前有命令在执行，请稍候。'); return; }
+    if (m === 'auto') {
+      if (lastMode === 'auto') { setResult('note', '当前已经是自动切换模式。'); return; }
+      openConfirm('切换到「自动切换」？VPN 稳定开启后模块会自动摘掉 AGH 劫持，关闭后恢复；每次动作前都会检查 AGH 健康。',
+        function () { run('mode_auto', function () { refreshFast(); }); });
+    } else {
+      if (lastMode === 'observe') { setResult('note', '当前已经是只看不动模式。'); return; }
+      openConfirm('切换到「只看不动」？模块将停止自动切换，并保持当前拓扑不变。',
+        function () { run('mode_observe', function () { refreshFast(); }); });
+    }
+  }
+  function askInteg() {
+    if (busy) { setResult('note', '当前有命令在执行，请稍候。'); return; }
+    if (lastInteg === null) { setResult('note', '集成状态未知，请先点「刷新状态」。'); return; }
+    if (lastInteg) {
+      openConfirm('关闭 DNS 集成？将从备份还原 Clash Meta 活动配置（移除 NS5591），需要重开 VPN 才生效。',
+        function () { run('integ_off', function () { refreshFast(); }); });
+    } else {
+      openConfirm('开启 DNS 集成？会先备份、再把 Clash Meta 活动配置的上游指向 AGH（127.0.0.1:5591），订阅更新后自动重打；随时可一键还原。',
+        function () { run('integ_on', function () { refreshFast(); }); });
+    }
+  }
+  function askCtl(action) {
+    if (busy) { setResult('note', '当前有命令在执行，请稍候。'); return; }
+    openConfirm(action === 'detach'
+      ? '摘除 AGH 53 劫持？只移除 OUTPUT 上那一条跳转，链体保留，可随时恢复。'
+      : '恢复 AGH 53 劫持？会在 nat OUTPUT 位置 1 插入跳转。',
+      function () { run(action, function () { refreshFast(); }); });
   }
 
   var timer = null;
   function autoRefresh() {
     var onoff = document.getElementById('autoref').checked;
     if (onoff && !timer) {
-      timer = window.setInterval(function () { if (!busy) { refreshStatus(); } }, 30000);
+      timer = window.setInterval(function () { if (!busy) { refreshFast(); } }, 30000);
     } else if (!onoff && timer) {
       window.clearInterval(timer);
       timer = null;
@@ -328,11 +543,27 @@
 
   window.refreshAll = refreshAll;
   window.run = run;
-  window.setMode = setMode;
-  window.integToggle = integToggle;
-  window.ctl = ctl;
+  window.askMode = askMode;
+  window.askInteg = askInteg;
+  window.askCtl = askCtl;
+
+  collectButtons();
   document.getElementById('autoref').addEventListener('change', autoRefresh);
-  refreshStatus();
+  document.getElementById('confno').addEventListener('click', function () {
+    var had = !!pendingConfirm;
+    closeConfirm();
+    if (had) { setResult('note', '已取消。'); }
+  });
+  document.getElementById('confyes').addEventListener('click', function () {
+    var fn = pendingConfirm;
+    closeConfirm();
+    if (typeof fn === 'function') { fn(); }
+  });
+  // Freshness label ticks locally so the header never looks frozen even
+  // between 30s polls. Zero shell cost.
+  window.setInterval(function () { renderHeader(lastSnapshot, lastRest); }, 1000);
+  // Initial paint uses the light path: no DNS probes, no multi-second lock.
+  refreshFast();
 })();
 </script>
 </body>

@@ -29,6 +29,17 @@ case "$1" in
     echo "querylog_age=$(querylog_age)"
     sh "$MODDIR/scripts/config_toggle.sh" status 2>/dev/null
     ;;
+  status_fast)
+    # v2.2: auto-refresh path. Same shape as `status` minus the DNS filter
+    # probes (the only slow part: 2x2s nc). Used by the WebUI's 30s poll and
+    # by the click-to-refresh button, so the panel never sits locked for
+    # seconds right after opening. Probe badges simply keep their last value.
+    cat "$LOG_STATE" 2>/dev/null
+    echo "---"
+    sh "$MODDIR/scripts/controller.sh" status 2>/dev/null
+    echo "querylog_age=$(querylog_age)"
+    sh "$MODDIR/scripts/config_toggle.sh" status 2>/dev/null
+    ;;
   stats)
     echo "== AGH querylog 近段统计 =="
     querylog_stats
@@ -72,7 +83,7 @@ case "$1" in
     sh "$MODDIR/scripts/controller.sh" attach 2>&1
     ;;
   *)
-    echo "Usage: webui.sh {status|stats|log|probe|audit|mode_observe|mode_auto|integ_on|integ_off|detach|attach}"
+    echo "Usage: webui.sh {status|status_fast|stats|log|probe|audit|mode_observe|mode_auto|integ_on|integ_off|detach|attach}"
     exit 1
     ;;
 esac

@@ -11,7 +11,7 @@ import zipfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SRC = os.path.join(HERE, "module")
-OUT = os.path.join(HERE, "rmg-netguard-v2.1.0.zip")
+OUT = os.path.join(HERE, "rmg-netguard-v2.2.0.zip")
 
 
 def md5(path):
@@ -29,6 +29,10 @@ def main():
     for root, dirs, names in os.walk(SRC):
         dirs.sort()
         for n in sorted(names):
+            # Never ship editor/backup leftovers (e.g. *.bak-v2.1.0) into a
+            # module zip: KernelSU installs everything at the zip root.
+            if n.startswith(".") or ".bak" in n or n.endswith("~"):
+                continue
             p = os.path.join(root, n)
             files.append(p)
 

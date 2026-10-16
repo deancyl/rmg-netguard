@@ -1,7 +1,35 @@
-# RMG NetGuard (rmg_netguard) v2.1.0
+# RMG NetGuard (rmg_netguard) v2.2.0
 
 DNS / VPN 双轨接管守护模块（KernelSU，late-load 兼容）。基于 2026-10-14/15 排查报告
 `S9180_网络卡顿全面排查与优化模块设计报告_2026-10-14.md` 的四项约束设计。
+
+## v2.2.0 变更（2026-10-16）
+
+**1) WebUI 交互重做 —— 根治“点了没反应”**
+- 根因（无头浏览器 + 真机量化）：页面打开即执行 `webui.sh status`，占用单飞锁
+  **2.9s**；期间所有按钮被禁用且 `run()` 静默 return，点击被丢弃且无任何提示。
+  叠加页面高 1200px、视口仅 823px，进度条与结果区都会滚出视野。
+- **新增 `status_fast` 子命令**（webui.sh）：只读 `state.json` + controller + config
+  status，跳过 2×2s 的 DNS 过滤探针。实测**首屏锁从 2.6s 降到 0.6s**。
+  首屏、30s 自动刷新、刷新按钮都走轻量路径；体检探针仍由完整 `status` 提供。
+- **顶部常驻状态条**（`position: sticky`）：状态/模式/轨道/AGH/探针徽章 + 快照时间
+  戳，后者每秒本地重算（零 shell 开销），超过 3 分钟标黄，数据新鲜度可见。
+- **就近结果反馈**：底部大输出框改为 header 内的结果带，点击立即显示“已发送：X，
+  执行中…”，返回后原地变绿/红结果；详细输出折叠进 `<details>`，页面高 1200→958px。
+- **面板内确认条取代 `window.confirm`**：原 3 处原生阻塞对话框全部移除，改为不阻塞
+  JS 线程的确认条（8s 自动收起），彻底消除“未应答导致整个面板假死”的风险。
+- **忙碌点击不再静默丢弃**：锁被占用时给出明确提示，按钮 `aria-busy` 标注；
+  操作完成后仅解锁动作按钮，当前模式的按钮保持锁定。
+- 文案去术语（“仅观测/自动双轨” → “只看不动/自动切换”，“轨道 A/B” → “劫持已挂/已摘”），
+  结果区与 header 加 `aria-live`，自动刷新默认开启。
+
+**2) 集成状态显示以事实为准**
+- 原实现只看 `run/integration` 标志文件；若直接调用过 `config_toggle.sh apply`
+  （绕过 webui.sh），标志会缺失、而 profile 实际已打补丁，界面就会显示“关闭”。
+- 现在以“活动 profile 是否真的含 NS5591”为准，标志仅作兜底；集成按钮文案随真实状态变化。
+
+**3) 构建产物净化**
+- `build_zip.py` 排除 `*.bak*`/`~`/点文件，避免编辑器备份被打进模块 zip 根目录。
 
 ## v2.1.0 变更（2026-10-15）
 
@@ -109,13 +137,14 @@ profile 层配置，改动需评估 rule 命中面）；CMFA override.json 被 p
 
 ```bash
 # 构建（本机）
-python build_zip.py            # 产出 rmg-netguard-v1.0.1.zip
+python build_zip.py            # 产出 rmg-netguard-v2.2.0.zip
+python verify_zip.py           # 校验 zip 与仓库文件逐字节一致、无 .bak 泄漏
 
 # 安装（二选一）
 # A. 管理器刷入 zip
 # B. adb:
-adb -s R5CW21C5WHB push rmg-netguard-v1.0.1.zip /data/local/tmp/
-adb -s R5CW21C5WHB shell "su -c 'ksud module install /data/local/tmp/rmg-netguard-v1.0.1.zip'"
+adb -s R5CW21C5WHB push rmg-netguard-v2.2.0.zip /data/local/tmp/
+adb -s R5CW21C5WHB shell "su -c 'ksud module install /data/local/tmp/rmg-netguard-v2.2.0.zip'"
 
 # 首次启动（不重启，late-load 会话内）
 adb -s R5CW21C5WHB shell "su -c 'sh /data/adb/modules/rmg_netguard/service.sh'"
