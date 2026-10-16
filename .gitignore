@@ -1,3 +1,7 @@
 *.zip
 run/
 ng_ui_check.js
+# editor/agent backup leftovers (never part of a module zip)
+*.bak*
+*~
+.DS_Store
