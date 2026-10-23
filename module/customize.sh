@@ -1,7 +1,7 @@
 # RMG NetGuard customize.sh (sourced by KernelSU installer)
 SKIPUNZIP=0
 
-ui_print "- RMG NetGuard v2.2.0 (rmg_netguard)"
+ui_print "- RMG NetGuard v2.2.1 (rmg_netguard)"
 ui_print "- 双轨接管守护: 默认仅观测; 自动双轨/DNS 集成均需 WebUI 显式开启"
 ui_print "- 设备: $(getprop ro.product.model) / Android $(getprop ro.build.version.release)"
 

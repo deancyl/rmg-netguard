@@ -1,0 +1,54 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build and verify module
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(sed -n 's/^version=v//p' module/module.prop)"
+          test "v${version}" = "${GITHUB_REF_NAME}"
+          python build_zip.py
+          python verify_zip.py
+
+      - name: Create checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          zip="rmg-netguard-${GITHUB_REF_NAME}.zip"
+          sha256sum "$zip" > "$zip.sha256"
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          zip="rmg-netguard-${GITHUB_REF_NAME}.zip"
+          gh release create "$GITHUB_REF_NAME" \
+            "$zip#KernelSU module zip" \
+            "$zip.sha256#SHA-256 checksum" \
+            --verify-tag \
+            --generate-notes \
+            --latest \
+            --title "RMG NetGuard $GITHUB_REF_NAME"

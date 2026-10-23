@@ -64,7 +64,7 @@ if agh_running; then
   FW=${r##* }; FW=${FW#W=}
   echo "9) 过滤探针     : primary=$FP wedge=$FW  (api.ad.xiaomi.com / googleads.g.doubleclick.net -> AGH:5591)"
   if [ "$FP" = "BLOCKED" ] && [ "$FW" = "UNKNOWN" ]; then
-    echo "   !! 楔死签名: 主域被拦而 wedge 域被静默丢弃 -> AGH 进程内部状态退化, 建议重启 AGH"
+    echo "   !! 双探针不一致: 可能是域名策略、缓存或单次 UDP 超时, 不足以单独判定 AGH 退化"
   fi
   QAGE=$(querylog_age)
   echo "   querylog 年龄 : ${QAGE}s (陈旧=日志缓冲停写或无流量)"

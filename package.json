@@ -1,0 +1,13 @@
+{
+  "name": "rmg-netguard",
+  "version": "2.2.1",
+  "private": true,
+  "description": "KernelSU DNS/VPN dual-track guardian",
+  "scripts": {
+    "test:webui:setup": "playwright install chromium",
+    "test:webui": "node tests/webui/verify.js"
+  },
+  "devDependencies": {
+    "playwright": "^1.64.1"
+  }
+}

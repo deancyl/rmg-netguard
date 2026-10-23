@@ -1,6 +1,10 @@
 *.zip
 run/
 ng_ui_check.js
+node_modules/
+tests/webui/shots/
+__pycache__/
+*.pyc
 # editor/agent backup leftovers (never part of a module zip)
 *.bak*
 *~

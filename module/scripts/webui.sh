@@ -43,24 +43,34 @@ case "$1" in
   stats)
     echo "== AGH querylog 近段统计 =="
     querylog_stats
+    exit $?
     ;;
   log)
     echo "== events.log 最近 20 行 =="
     tail -n 20 "$LOG_EVENTS" 2>/dev/null
+    exit $?
     ;;
   probe)
     sh "$MODDIR/scripts/probe.sh" 2>&1
+    exit $?
     ;;
   audit)
     sh "$MODDIR/scripts/rules_audit.sh" 2>&1
+    exit $?
     ;;
   mode_observe)
-    echo observe > "$MODE_FILE"
+    printf '%s\n' observe > "$MODE_FILE" || {
+      echo "FAIL: cannot write mode file"
+      exit 1
+    }
     log_event "MODE" "switched to observe (WebUI)"
     echo "OK: mode=observe"
     ;;
   mode_auto)
-    echo auto > "$MODE_FILE"
+    printf '%s\n' auto > "$MODE_FILE" || {
+      echo "FAIL: cannot write mode file"
+      exit 1
+    }
     log_event "MODE" "switched to auto dual-track (WebUI)"
     echo "OK: mode=auto"
     ;;
@@ -69,18 +79,22 @@ case "$1" in
     rc=$?
     [ "$rc" = "0" ] && { echo on > "$INTEG_FILE"; log_event "INTEG" "integration enabled (WebUI)"; }
     echo "$out"
+    exit "$rc"
     ;;
   integ_off)
     out=$(sh "$MODDIR/scripts/config_toggle.sh" revert 2>&1)
     rc=$?
     [ "$rc" = "0" ] && { echo off > "$INTEG_FILE"; log_event "INTEG" "integration disabled (WebUI)"; }
     echo "$out"
+    exit "$rc"
     ;;
   detach)
     sh "$MODDIR/scripts/controller.sh" detach 2>&1
+    exit $?
     ;;
   attach)
     sh "$MODDIR/scripts/controller.sh" attach 2>&1
+    exit $?
     ;;
   *)
     echo "Usage: webui.sh {status|status_fast|stats|log|probe|audit|mode_observe|mode_auto|integ_on|integ_off|detach|attach}"

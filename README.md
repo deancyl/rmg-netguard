@@ -1,171 +1,187 @@
-# RMG NetGuard (rmg_netguard) v2.2.0
+# RMG NetGuard
 
-DNS / VPN 双轨接管守护模块（KernelSU，late-load 兼容）。基于 2026-10-14/15 排查报告
-`S9180_网络卡顿全面排查与优化模块设计报告_2026-10-14.md` 的四项约束设计。
+面向 KernelSU 的 DNS / VPN 双轨守护模块，用于协调 AdGuard Home（AGH）与
+Clash Meta / mihomo 的 DNS 接管关系。默认只观测、不修改网络；自动切换与
+DNS 集成都必须由用户在 WebUI 中显式开启。
 
-## v2.2.0 变更（2026-10-16）
+[![Latest release](https://img.shields.io/github/v/release/deancyl/rmg-netguard?sort=semver)](https://github.com/deancyl/rmg-netguard/releases/latest)
+[![KernelSU](https://img.shields.io/badge/KernelSU-late--load-2ea44f)](https://kernelsu.org/zh_CN/guide/module.html)
+[![Android](https://img.shields.io/badge/Android-16-3ddc84)](https://github.com/deancyl/rmg-netguard)
+[![Shell](https://img.shields.io/badge/runtime-Android%20sh-4eaa25)](https://github.com/deancyl/rmg-netguard)
 
-**1) WebUI 交互重做 —— 根治“点了没反应”**
-- 根因（无头浏览器 + 真机量化）：页面打开即执行 `webui.sh status`，占用单飞锁
-  **2.9s**；期间所有按钮被禁用且 `run()` 静默 return，点击被丢弃且无任何提示。
-  叠加页面高 1200px、视口仅 823px，进度条与结果区都会滚出视野。
-- **新增 `status_fast` 子命令**（webui.sh）：只读 `state.json` + controller + config
-  status，跳过 2×2s 的 DNS 过滤探针。实测**首屏锁从 2.6s 降到 0.6s**。
-  首屏、30s 自动刷新、刷新按钮都走轻量路径；体检探针仍由完整 `status` 提供。
-- **顶部常驻状态条**（`position: sticky`）：状态/模式/轨道/AGH/探针徽章 + 快照时间
-  戳，后者每秒本地重算（零 shell 开销），超过 3 分钟标黄，数据新鲜度可见。
-- **就近结果反馈**：底部大输出框改为 header 内的结果带，点击立即显示“已发送：X，
-  执行中…”，返回后原地变绿/红结果；详细输出折叠进 `<details>`，页面高 1200→958px。
-- **面板内确认条取代 `window.confirm`**：原 3 处原生阻塞对话框全部移除，改为不阻塞
-  JS 线程的确认条（8s 自动收起），彻底消除“未应答导致整个面板假死”的风险。
-- **忙碌点击不再静默丢弃**：锁被占用时给出明确提示，按钮 `aria-busy` 标注；
-  操作完成后仅解锁动作按钮，当前模式的按钮保持锁定。
-- 文案去术语（“仅观测/自动双轨” → “只看不动/自动切换”，“轨道 A/B” → “劫持已挂/已摘”），
-  结果区与 header 加 `aria-live`，自动刷新默认开启。
+> 这是会修改 `iptables` 和 Clash Meta 活动配置的生产级模块。安装前请阅读
+> [安全边界](#安全边界) 与 [故障恢复](https://github.com/deancyl/rmg-netguard/wiki/故障排查与恢复)。
 
-**2) 集成状态显示以事实为准**
-- 原实现只看 `run/integration` 标志文件；若直接调用过 `config_toggle.sh apply`
-  （绕过 webui.sh），标志会缺失、而 profile 实际已打补丁，界面就会显示“关闭”。
-- 现在以“活动 profile 是否真的含 NS5591”为准，标志仅作兜底；集成按钮文案随真实状态变化。
+## 功能
 
-**3) 构建产物净化**
-- `build_zip.py` 排除 `*.bak*`/`~`/点文件，避免编辑器备份被打进模块 zip 根目录。
+- **双轨拓扑**：VPN 关闭时由 `nat OUTPUT` 劫持 DNS 到 AGH；VPN 开启时可摘除
+  劫持，让 mihomo 的上游继续经过 AGH。
+- **默认只观测**：`observe` 模式不下发任何网络规则，适合先部署、看状态、再启用。
+- **健康门控自动切换**：AGH 进程与 5591 DNS 应答都正常时才允许
+  `attach` / `detach`；VPN 状态需连续两轮稳定后才动作。
+- **DNS 集成可逆**：修改 Clash Meta 活动 profile 前自动备份，检测订阅更新导致的
+  漂移并重打补丁，卸载时恢复原配置。
+- **KernelSU WebUI**：顶部常驻状态、快照时间、就近操作反馈、面板内确认、
+  自动刷新和单飞任务锁。
+- **可观测**：状态机、事件日志、规则审计、过滤探针和 AGH querylog 统计。
+- **空载友好**：未安装 AGH / Clash 时进入纯观测空载，不等待探针、不写 netfilter。
 
-## v2.1.0 变更（2026-10-15）
+## 工作模式
 
-**1) WebUI 防卡死（UX/UI 重构）**
-- 根因：`webui.sh status` 串行 2 个过滤探针（每个 `timeout 3 nc -w 2`，AGH 未应答
-  即 6s）+ `probe.sh` 体检串行执行（2 探针 6s + 5 次串行 curl 最坏 30s + 2 端口探测
-  4s ≈ 最坏 40s），且 UI 无忙碌态、按钮不禁用，用户连点造成 shell 堆积
-- 脚本侧提速：过滤探针**并行对**（`filter_probe_pair`，墙钟=单探针上限）、
-  DNS 延迟改 **3 次并发采样**（@3s 上限，原 5 次串行 @6s）、端口存活探测并行、
-  querylog 统计改**单遍 awk**（原 4 遍扫描）、探针超时降为 `FILTER_PROBE_TMO`(2s)
-  实测：status 3s（原 6-8s）、probe 7s（原最坏 40s）、stats/log 0s
-- UI 侧：忙碌管理器（单飞锁 + 全按钮禁用 + 顶部进度条 + 秒数计时 + 90s 看门狗
-  强制解锁）、自动刷新遇忙跳过、探针 SKIP/AGH 未运行徽章与说明条
+| 模式 | 行为 | 适合场景 |
+|---|---|---|
+| `observe` | 只采样状态，不摘取或恢复劫持 | 首次安装、排障、稳定优先 |
+| `auto` | VPN 稳定开启后摘除劫持；VPN 关闭后恢复劫持 | AGH 与 Clash Meta 已稳定共存 |
 
-**2) 无 AGH / 无 Clash 环境优雅降级（已实测）**
-- env.sh 全部目标路径/包名/进程名/劫持链可环境变量覆盖（模拟钩子）
-- `agh_installed / agh_running / clash_installed / target_present` 可用性判定；
-  AGH 未运行 → status/probe 探针**即时 SKIP**（零等待），体检打印"未安装·纯观测"横幅
-- guard 空载退避：无任何目标时 `IDLE_INTERVAL`(300s) 长睡眠，跳过 curl/看门狗/审计/
-  控制器，state 记 `dns_ms:"n/a"`，进出空载各记一条 IDLE 事件
-- 实测（全套 SIM 覆盖 + 隔离测试目录）：status 0s 全 SKIP、体检 NORMAL 无异常、
-  controller/config_toggle 干净拒绝、audit 全 INFO、空载 guard 12s CPU ticks=0
-- 顺带修复 3 个存量缺陷：**toybox flock 不支持 -w**（detach/attach 曾静默空转，
-  改为 flock 探测 + mkdir 自旋锁回退）；controller/config_toggle 无条件 `exit 0`
-  （失败误判成功，现正确传播 rc）；5 处硬编码 `pidof AdGuardHome`/路径统一为
-  `$AGH_PROC`/可覆盖变量；guard 自注册 pid（手动重启也可追踪）
+两条轨道的目标拓扑：
 
-**3) 空载网络零开销（已实测）**
-- 模块自身**零 netfilter 规则**（`iptables-save | grep -ci netguard` = 0），
-  观测/空载模式从不触碰网络路径
-- A/B 实测（guard 运行 vs 停止，5×curl，同一 Wi-Fi+TUN 承载）：DNS 中位
-  7.5ms vs 8.4ms、总延迟 2.3-4.0s vs 2.5-3.9s（TUN 固有），统计无差异
-- 生产 guard（observe）60s CPU = 0 ticks；空载模式 CPU = 0 ticks；无 wakelock
-  （纯 shell sleep 循环）；蜂窝路径由结构保证（零规则+零探测，代码与承载无关）
+| 轨道 | 条件 | DNS 路径 |
+|---|---|---|
+| A | VPN 关闭，AGH 劫持启用 | App 53 → AGH → 上游 DNS |
+| B | VPN 开启，AGH 劫持摘除 | App DNS → TUN → mihomo → AGH:5591 → GeoIP |
 
-## v2.0.0 架构（2026-10-15）
+轨道 B 的过滤效果依赖 **DNS 集成**。若活动 profile 没有指向
+`127.0.0.1:5591`，模块会把集成状态显示为“未打补丁”，不会把它误报为已开启。
 
-**双轨道拓扑**（切换只动 nat OUTPUT 上那一条 jump，链体永不触碰）：
-- **轨道 A**（VPN 关 / 劫持 ON）：App 53 → AGH 过滤 → 国内 DoH 直连
-- **轨道 B**（VPN 开 / 劫持 OFF）：App DNS → TUN → mihomo → **AGH:5591 过滤** → GEOIP 分流
-  （前提：mihomo 上游指向 AGH，即"DNS 集成"，见下）
+## 安装
 
-**模式**（`run/mode`，WebUI 切换）：
-- `observe`（默认）：v1.0.1 行为，零干预
-- `auto`：VPN 状态滞留 2 轮（防抖）后，经 **健康门**（AGH 进程存活 + 5591 UDP 应答，
-  双向同门）执行 `controller.sh detach/attach`；flock 单写者；幂等；动作全程写 events.log
+### 前置条件
 
-**DNS 集成开关**（`run/integration`，WebUI 切换；`config_toggle.sh`）：
-- apply：备份活动 Meta profile（首份永不覆盖）→ nameserver 补丁为 `['127.0.0.1:5591']`
-  （sed 到临时文件 + cat 截断重写，保留 uid/SELinux context）→ 记录 md5 marker
-- 漂移看门狗：guard 每 5 轮 `config_toggle auto`——订阅更新覆盖 profile 后自动重打
-- revert：从首份备份还原（还原前校验备份自身不含 NS5591，防污染备份）
-- 卸载自动还原全部备份 + 劫持
+- KernelSU 环境，支持模块与 WebUI；本项目已在 KernelSU 3.3.1 late-load 上验证。
+- 已安装并启动 AdGuard Home，默认监听 `127.0.0.1:5591`。
+- 使用 DNS 集成时，需要 Clash Meta 包名
+  `com.github.metacubex.clash.meta` 及可读的活动 profile。
+- 首次安装前准备可用的模块禁用/安全模式方式，并保留当前网络配置快照。
 
-**检测能力**（v2 较 v1 增强）：
-- 过滤探针 `filter_probe`：向 AGH:5591 直接查询实测被拦域名（api.ad.xiaomi.com，
-  0.0.0.0/TTL10 已验证），双信号判定（rcode3 NXDOMAIN / rdata 00000000）→ BLOCKED/OPEN/UNKNOWN
-- 客户端识别（meta/flclash/none）、轨道判定（A/B/-）、AGH querylog 近段统计
-  （total/filtered/loopback + top 拦截域名）
-- WebUI：状态卡（含模式/轨道/客户端/探针徽章）、模式切换、集成开关（带确认与还原）、
-  体检/审计/统计/日志四个输出面板、30s 自动刷新可选
+不同 KernelSU 版本的支持范围请以
+[KernelSU 模块文档](https://kernelsu.org/zh_CN/guide/module.html) 为准。
 
-**关键设计不变量**：
-1. 两轨道各自功能完备——切换失败/延迟只是次优拓扑，不是故障（正确性不依赖切换）
-2. AGH 不应答时任何方向的动作都会被拒绝（杜绝 DOWN_PORT 黑洞）
-3. 集成补丁的原始备份永不覆盖；备份含 NS5591 时拒绝还原（防污染）
-4. 全部动作可逆、可审计（events.log）
+### 刷入
 
-**已知遗留**：`nameserver-policy geosite:cn→[system]` 使国内域名绕过 AGH（订阅
-profile 层配置，改动需评估 rule 命中面）；CMFA override.json 被 profile dns 段压制
-（故集成走 profile 直补路径）。
+1. 从 [Releases](https://github.com/deancyl/rmg-netguard/releases/latest) 下载
+   `rmg-netguard-v2.2.1.zip`。
+2. 在 KernelSU 管理器中安装 zip。
+3. 让模块在下一轮启动中加载，或在 late-load 会话里手动启动一次：
 
-## v1.0.1 变更（2026-10-15）
-
-- **DNS 探测降频**：curl 延迟测量仅在状态迁移或每 `DNS_EVERY`（默认 5）轮执行，
-  其余轮复用上次实测值；告警事件只对新鲜测量值触发，陈旧值不会重复告警。
-  探测流量降 ~80%（960 → 约 200 次/日）。
-- **PID 复用防护**：service.sh / uninstall.sh kill 旧实例前校验
-  `/proc/<pid>/cmdline` 必须匹配本模块 guard 路径，消除理论误杀。
-- **config 白名单**：`run/config` 仅接受空行/注释/`VAR=安全字符` 赋值行，
-  含其他内容整份拒绝并记 WARN，杜绝经配置路径的代码注入。
-- **审计自适应**：进入 RISK_COEXIST 状态的迁移轮立即执行一次规则审计，
-  WARN 与风险态同帧对齐，便于取证。
-
-## 设计要点
-
-- **只观测**：guard.sh 循环采集 tun0（含 FlClash 命名）、AGH 劫持链（nat OUTPUT）、
-  AGH 5591 / mihomo 1053 监听、AGH 进程、系统路径 DNS 延迟，写 run/state.json。
-- **状态机**：`RISK_COEXIST`（VPN+劫持并存=串联风险）/ `INCONSISTENT`（AGH 进程在但规则不在，
-  即 10-13 实证缺陷态）/ `DOWN_PORT`（劫持在挂但 5591 无监听=全机 DNS 黑洞）/ `NORMAL`。
-- **事件**：仅状态迁移与 DNS 延迟 >800ms（可配）写 events.log（滚动 200 行）。
-- **规则审计**（只读，30min 一次 + 手动）：扫描 FlClash 全部 profile 与 Clash Meta 活动
-  profile 的 GEOIP,CN 兜底；检查 default-nameserver 是否误指 5591（冷启动死锁风险）；
-  检查 AGH 境外 DoH fallback 与停止不对称缺陷态。
-- **救援仅手动**：rescue.sh remove/restore 仅由 WebUI / Action 触发；只摘/插
-  `OUTPUT -> ADGUARD_REDIRECT_DNS` 一条 jump（链体保留）；卸载时若曾摘除自动还原。
-
-## late-load 适配（本机 KSU = late-load）
-
-- 入口仅 `service.sh`（late_start，late-load 模式下确认执行）；**无 post-fs-data.sh、无 initrc/**
-  （late-load 下不可用）。
-- 单例保护：root 守护跨 KSU 软重启存活，service.sh 启动时按 pidfile + pkill 清理旧实例。
-
-## 构建 / 安装 / 验证 / 回滚
-
-```bash
-# 构建（本机）
-python build_zip.py            # 产出 rmg-netguard-v2.2.0.zip
-python verify_zip.py           # 校验 zip 与仓库文件逐字节一致、无 .bak 泄漏
-
-# 安装（二选一）
-# A. 管理器刷入 zip
-# B. adb:
-adb -s R5CW21C5WHB push rmg-netguard-v2.2.0.zip /data/local/tmp/
-adb -s R5CW21C5WHB shell "su -c 'ksud module install /data/local/tmp/rmg-netguard-v2.2.0.zip'"
-
-# 首次启动（不重启，late-load 会话内）
-adb -s R5CW21C5WHB shell "su -c 'sh /data/adb/modules/rmg_netguard/service.sh'"
-
-# 验证
-adb -s R5CW21C5WHB shell "su -c 'sh /data/adb/modules/rmg_netguard/scripts/probe.sh'"
-adb -s R5CW21C5WHB shell "su -c 'cat /data/adb/modules/rmg_netguard/run/state.json'"
-adb -s R5CW21C5WHB shell "su -c 'sh /data/adb/modules/rmg_netguard/scripts/rules_audit.sh'"
-
-# 回滚 / 卸载（无任何持久化系统修改）
-adb -s R5CW21C5WHB shell "su -c 'ksud module disable rmg_netguard'"   # 禁用
-adb -s R5CW21C5WHB shell "su -c 'ksud module uninstall rmg_netguard'" # 卸载(uninstall.sh 自动清理)
-# 或 KSU 管理器操作；紧急情况：开机音量下×3 安全模式即全模块禁用
+```sh
+su -c 'sh /data/adb/modules/rmg_netguard/service.sh'
 ```
 
-## 验收基准（部署后）
+4. 打开模块 WebUI，先保持“只看不动”，确认状态、AGH 与轨道信息正常。
+5. 需要自动切换时再打开“自动切换”；需要轨道 B 过滤时再打开“DNS 集成”。
 
-| 项 | 断言 |
+升级时直接刷入新 zip。升级会保留 `run/mode`、`run/integration`、事件日志和
+DNS 集成备份；卸载会停止 guard、还原模块持有的 profile 备份，并在必要时恢复
+AGH 劫持。
+
+## WebUI
+
+- **顶部状态条**：状态、模式、轨道、AGH、探针和快照年龄始终可见。
+- **只看不动 / 自动切换**：切换前显示面板内确认条，不调用阻塞式原生对话框。
+- **DNS 集成**：以活动 profile 的实际补丁状态为准，可直接开启或还原。
+- **刷新状态**：执行完整状态采集，包含 DNS 过滤探针。
+- **一键体检 / 规则审计 / 拦截统计 / 事件日志**：结果立即显示在顶部结果区，
+  完整文本位于“详细输出”。
+- **每 30 秒自动刷新**：默认开启；后台状态采样周期仍由 guard 的 90 秒间隔决定，
+  页面右上角显示的是最近一次后台快照的时间。
+
+操作进行中会锁定动作按钮并显示秒数。重复点击会得到明确提示；命令超过 90 秒
+未返回时自动解除锁定。失败时界面显示红色错误，不再把非零退出码或无输出当作成功。
+
+## 安全边界
+
+1. 自动切换只摘取或插入 `nat OUTPUT` 上的一条
+   `OUTPUT -> ADGUARD_REDIRECT_DNS` 跳转，不修改链体。
+2. AGH 不存活或不响应 5591 时，任何方向的自动切换都会被拒绝。
+3. DNS 集成只处理当前活动的 Clash Meta profile；首份备份不会被覆盖，备份自身
+   含 `NS5591` 时拒绝还原。
+4. `observe` 模式不主动改写网络规则；无 AGH / Clash 时进入 300 秒退避空载。
+5. 所有改动均可通过 WebUI、模块卸载或安全模式回退。不要把未经验证的生产设备
+   当作测试机。
+
+## 状态与诊断
+
+| 状态 | 含义 | 建议 |
+|---|---|---|
+| `NORMAL` | 观测到的进程、端口和拓扑一致 | 继续观察 |
+| `RISK_COEXIST` | VPN 与 DNS 劫持同时存在，形成串联拓扑 | 可工作，但建议评估是否切到 `auto` |
+| `INCONSISTENT` | AGH 进程存在，但劫持规则缺失 | 检查 AGH 模块与 netfilter |
+| `DOWN_PORT` | 劫持存在，但 5591 未监听 | 优先恢复分辨率，避免 DNS 黑洞 |
+
+过滤探针显示 `BLOCKED / UNKNOWN` 时只表示两个测试域名结果不一致，可能是域名
+策略或单域名超时，不能单独据此判定 AGH 整体故障。querylog 长时间没有新记录也
+可能只是设备无 DNS 流量。
+
+## 构建与验证
+
+```sh
+python build_zip.py
+python verify_zip.py
+```
+
+WebUI 回归测试：
+
+```sh
+npm install
+npx playwright install chromium
+npm run test:webui
+```
+
+测试使用真实 Chromium、设备 CSS 视口和 KernelSU `exec(cmd, "{}", callback)`
+桥接桩，覆盖首屏轻量刷新、自动刷新、点击反馈、确认流程、失败状态、实时模式、
+布局和 JavaScript 异常。
+
+## 配置与文件
+
+| 路径 | 用途 |
 |---|---|
-| 单例 | 连续 3 次 `sh service.sh` 后 `pgrep -f guard.sh` 仅 1 个 |
-| 状态判定 | 当前真机（VPN 开 + 劫持在挂）state.json 应为 `RISK_COEXIST` |
-| 事件 | 开关 VPN 各一次，events.log 各记录一条 STATE 迁移 |
-| 功耗 | 24h 后 `top -n 1` guard 相关 CPU 时间 < 30s |
-| 零干预 | 72h 内 `iptables -S` 无本模块产生的任何链/jump |
+| `/data/adb/modules/rmg_netguard/run/mode` | `observe` / `auto` |
+| `/data/adb/modules/rmg_netguard/run/integration` | DNS 集成标志 |
+| `/data/adb/modules/rmg_netguard/run/state.json` | 最近一次 guard 快照 |
+| `/data/adb/modules/rmg_netguard/run/events.log` | 状态与动作事件 |
+| `/data/adb/modules/rmg_netguard/run/backups/` | Clash Meta profile 原始备份 |
+| `/data/adb/modules/rmg_netguard/run/config` | 可选的 guard 参数覆盖 |
+
+## 文档
+
+- [Wiki 首页](https://github.com/deancyl/rmg-netguard/wiki)
+- [安装与升级](https://github.com/deancyl/rmg-netguard/wiki/安装与升级)
+- [WebUI 使用](https://github.com/deancyl/rmg-netguard/wiki/WebUI-使用)
+- [架构与工作模式](https://github.com/deancyl/rmg-netguard/wiki/架构与工作模式)
+- [故障排查与恢复](https://github.com/deancyl/rmg-netguard/wiki/故障排查与恢复)
+- [开发与验证](https://github.com/deancyl/rmg-netguard/wiki/开发与验证)
+- [完整变更记录](CHANGELOG.md)
+
+## 项目结构
+
+```text
+module/
+  module.prop          KernelSU 模块元数据
+  service.sh           late-load 服务入口
+  scripts/
+    guard.sh           观测与自动切换循环
+    controller.sh      健康门控的 attach / detach
+    config_toggle.sh   Clash Meta profile 集成
+    webui.sh           WebUI 命令分发
+  webroot/index.html   KernelSU WebUI
+tests/webui/           Chromium 交互回归测试
+build_zip.py           构建模块 zip
+verify_zip.py          校验 zip 与源码一致
+```
+
+## 已知限制
+
+- `nameserver-policy geosite:cn -> [system]` 等 profile 策略会让部分国内域名绕过
+  AGH；这是订阅配置层面的行为，改动前需要评估规则命中范围。
+- CMFA `override.json` 可能被 profile 自身的 `dns:` 段压制，因此集成直接处理活动
+  profile，并依赖备份和漂移检测保证可逆。
+- 本项目不是 AdGuard Home 或 Clash Meta 的替代品，也不负责修复第三方模块自身
+  的进程、pidfile 或端口问题。
+
+## 版本
+
+当前版本：`v2.2.1`（`versionCode=23`）。版本号使用 SemVer；发布 zip 应与
+Git tag、`module.prop` 和 Release 标题保持一致。
+
+作者：`deanc` · 项目地址：
+[deancyl/rmg-netguard](https://github.com/deancyl/rmg-netguard)

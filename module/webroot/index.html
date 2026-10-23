@@ -11,7 +11,7 @@
   .wrap { padding: 12px 14px 28px; }
   h1 { font-size: 16px; margin-bottom: 1px; }
   .sub { color: #7d8792; font-size: 12px; margin-bottom: 12px; }
-  .card { background: #1b1f24; border: 1px solid #2a3038; border-radius: 10px; padding: 12px 14px; margin-bottom: 12px; }
+  .card { background: #1b1f24; border: 1px solid #2a3038; border-radius: 8px; padding: 12px 14px; margin-bottom: 12px; }
   .card h2 { font-size: 13px; color: #9aa6b2; margin-bottom: 8px; font-weight: 600; }
   .kv { display: flex; justify-content: space-between; gap: 10px; padding: 3px 0; }
   .kv b { font-weight: 600; color: #e8edf2; text-align: right; }
@@ -34,7 +34,7 @@
   .hint { color: #66707b; font-size: 11px; margin-top: 8px; }
   .row { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
   label.auto { color: #7d8792; font-size: 12px; }
-  details { background: #1b1f24; border: 1px solid #2a3038; border-radius: 10px; margin-bottom: 10px; overflow: hidden; }
+  details { background: #1b1f24; border: 1px solid #2a3038; border-radius: 8px; margin-bottom: 10px; overflow: hidden; }
   details > summary { list-style: none; cursor: pointer; padding: 12px 14px; font-size: 13px; font-weight: 600; color: #9aa6b2; display: flex; align-items: center; gap: 8px; }
   details > summary::-webkit-details-marker { display: none; }
   details > summary::after { content: "▸"; margin-left: auto; color: #66707b; transition: transform .15s; }
@@ -70,7 +70,7 @@
       <span id="hb_mode" class="badge mut">--</span>
       <span id="hb_track" class="badge mut">--</span>
       <span id="hb_agh" class="badge mut">AGH --</span>
-      <span id="hb_probe" class="badge mut">探针 --</span>
+      <span id="hb_probe" class="badge mut">探针 未检测</span>
       <span class="fresh" id="hb_fresh">--</span>
     </div>
     <div id="busybar" role="status" aria-live="polite"><span class="spin"></span><span id="busytxt">处理中…</span></div>
@@ -79,7 +79,7 @@
   </div>
 
   <div class="wrap">
-    <h1>RMG NetGuard <span style="font-size:12px;color:#7d8792">v2.2.0</span></h1>
+    <h1>RMG NetGuard <span style="font-size:12px;color:#7d8792">v2.2.1</span></h1>
     <div class="sub">DNS / VPN 双轨守护 · 默认只看不动 · 所有切换健康门控且可逆</div>
 
     <div class="hint" style="margin:-6px 0 12px">状态每 90 秒由后台刷新一次；此处显示的是最近一次采样，右上角为距今时间。</div>
@@ -107,7 +107,7 @@
       </div>
       <div class="kv"><span>当前模式</span><b id="st_mode2">--</b></div>
       <div class="kv"><span>集成状态</span><b id="st_integ">--</b></div>
-      <div class="kv"><span>过滤探针</span><b id="st_probe">--</b></div>
+      <div class="kv"><span>过滤探针</span><b id="st_probe">未检测</b></div>
       <div class="kv"><span>AGH 日志年龄</span><b id="st_qage">--</b></div>
       <div id="st_env" style="margin-top:6px"></div>
       <div class="hint">只看不动 = 零干预，只记录状态。自动切换 = VPN 稳定开启后摘掉劫持、关闭后恢复劫持；每次动作前都强制检查 AGH 存活与 5591 应答。DNS 集成 = 把 Clash Meta 活动配置的上游指向 AGH（自动备份、自动重打、可一键还原）。AGH 未安装时模块自动空载，不等待、不写网络。</div>
@@ -283,14 +283,22 @@
       if (errno) { text += '\n[退出码 ' + errno + ']'; }
       show(text || '(无输出)');
       var first = (stdout || '').split('\n')[0] || '';
-      setResult(errno ? 'err' : 'ok',
-        (errno ? '失败：' : '完成：') + (LABEL[sub] || sub) + (first ? '\n' + first : ''));
+      var failed = !!errno || /^FAIL:/m.test(stdout || '');
+      setResult(failed ? 'err' : 'ok',
+        (failed ? '失败：' : '完成：') + (LABEL[sub] || sub) + (first ? '\n' + first : ''));
       if (done) { done(); }
     });
   }
 
   // Render the sticky header from the last known snapshot + live parsed state.
   function renderHeader(s, rest) {
+    var liveMode = null;
+    if (typeof rest === 'string') {
+      var liveModeMatch = /mode=(\w+)/.exec(rest);
+      if (liveModeMatch) { liveMode = liveModeMatch[1]; }
+    }
+    if (liveMode) { lastMode = liveMode; }
+
     var stateBadge;
     if (!s) {
       stateBadge = { cls: 'mut', txt: '读取中…' };
@@ -301,7 +309,7 @@
     document.getElementById('hb_state').className = 'badge ' + stateBadge.cls;
     document.getElementById('hb_state').textContent = stateBadge.txt;
 
-    var modeTxt = (s && s.mode) ? s.mode : lastMode;
+    var modeTxt = liveMode || ((s && s.mode) ? s.mode : lastMode);
     if (modeTxt) { lastMode = modeTxt; }
     var mBadge = document.getElementById('hb_mode');
     mBadge.className = 'badge ' + (modeTxt === 'auto' ? 'info' : 'mut');
@@ -342,6 +350,9 @@
         var cls = (v === 'BLOCKED' ? 'ok' : (v === 'OPEN' ? 'risk' : 'mut'));
         pBadge.className = 'badge ' + ((v === 'BLOCKED' && w === 'UNKNOWN') ? 'warn' : cls);
         pBadge.textContent = '探针 ' + v + (w && w !== 'SKIP' ? ' / ' + w : '');
+      } else if (!s || !s.agh_pid) {
+        pBadge.className = 'badge mut';
+        pBadge.textContent = '探针 未检测';
       }
       // no fp (status_fast): keep the last painted probe badge untouched
     }
@@ -370,7 +381,8 @@
     else if (s.state === 'DOWN_PORT')    { stHtml = '<span class="badge risk">DNS 黑洞</span>'; }
     else                                 { stHtml = '<span class="badge ok">正常</span>'; }
     document.getElementById('st_state').innerHTML = stHtml;
-    var modeTxt = (s && s.mode) ? s.mode : 'observe';
+    var mode2 = /mode=(\w+)/.exec(rest);
+    var modeTxt = mode2 ? mode2[1] : ((s && s.mode) ? s.mode : 'observe');
     lastMode = modeTxt;
     var trackTxt = (s && s.track) ? s.track : '?';
     document.getElementById('st_modetrack').innerHTML =
@@ -384,7 +396,6 @@
     document.getElementById('st_dns').textContent = (s ? (s.dns_ms || 'n/a') : '--');
     document.getElementById('st_ts').textContent = (s && s.ts) || '--';
 
-    var mode2 = /mode=(\w+)/.exec(rest);
     var integ = /integration=(\w+)/.exec(rest);
     var prof = /profile=(\w+)/.exec(rest);
     var fp = /filter_probe=(\w+)/.exec(rest);
@@ -417,17 +428,19 @@
       if (w && w !== 'SKIP') {
         html += ' <span class="badge ' + (w === 'BLOCKED' ? 'ok' : (w === 'OPEN' ? 'risk' : 'warn')) + '">wedge ' + w + '</span>';
         if (v === 'BLOCKED' && w === 'UNKNOWN') {
-          html += ' <span class="badge risk">AGH 退化·建议重启</span>';
+          html += ' <span class="badge warn">双探针结果不一致</span>';
         }
       }
       prEl.innerHTML = html;
+    } else if (!s || !s.agh_pid) {
+      prEl.textContent = '未检测（AGH 未运行）';
     }
     // note: status_fast omits the probes, so keep the last painted value intact
 
     var qaEl = document.getElementById('st_qage');
     if (qa) {
       var age = parseInt(qa[1], 10);
-      qaEl.innerHTML = '<span class="badge ' + (age >= 1800 ? 'warn' : 'mut') + '">' + (age >= 0 ? age + 's' : 'n/a') + '</span>';
+      qaEl.innerHTML = '<span class="badge mut">' + (age >= 0 ? age + 's' : 'n/a') + '</span>';
     } else { qaEl.textContent = '--'; }
 
     var envEl = document.getElementById('st_env');
@@ -563,6 +576,7 @@
   // between 30s polls. Zero shell cost.
   window.setInterval(function () { renderHeader(lastSnapshot, lastRest); }, 1000);
   // Initial paint uses the light path: no DNS probes, no multi-second lock.
+  autoRefresh();
   refreshFast();
 })();
 </script>

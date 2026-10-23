@@ -6,7 +6,7 @@ import zipfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SRC = os.path.join(HERE, "module")
-OUT = os.path.join(HERE, "rmg-netguard-v2.2.0.zip")
+OUT = os.path.join(HERE, "rmg-netguard-v2.2.1.zip")
 
 z = zipfile.ZipFile(OUT)
 names = z.namelist()
