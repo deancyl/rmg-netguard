@@ -44,7 +44,12 @@ echo "7) mihomo 1053  : $( [ $MIHOMO_PORT_UP = 1 ] && echo 是 || { [ "$AGH_PID"
 if [ "$VPN_UP" = "1" ] && [ "$HIJACK" = "1" ]; then
   ST="RISK_COEXIST(串联风险: AppDNS->AGH->DoH->TUN 串联, VPN 路径抖动即全机 DNS 停摆)"
 elif [ "$AGH_PID" != "0" ] && [ "$HIJACK" != "1" ]; then
-  ST="INCONSISTENT(进程在但劫持规则不在, AGH 实际未接管 DNS)"
+  # v2.2.3: expected in auto mode (track B) or after manual/rescue detach
+  if [ "$(mode_get)" = "auto" ] || [ -f "$FLAG_RESCUED" ]; then
+    ST="NORMAL(轨道 B: AGH 作为 mihomo 上游, 不劫持 53)"
+  else
+    ST="INCONSISTENT(进程在但劫持规则不在, AGH 实际未接管 DNS)"
+  fi
 elif [ "$HIJACK" = "1" ] && [ "$AGH_PORT_UP" != "1" ]; then
   ST="DOWN_PORT(劫持在挂但 5591 无监听: 全机 DNS 黑洞!)"
 else

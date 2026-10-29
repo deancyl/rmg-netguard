@@ -43,7 +43,14 @@ classify() {
   if [ "$VPN_UP" = "1" ] && [ "$HIJACK" = "1" ]; then
     echo "RISK_COEXIST"
   elif [ "$AGH_PID" != "0" ] && [ "$HIJACK" != "1" ]; then
-    echo "INCONSISTENT"
+    # v2.2.3: AGH-alive + hijack-off is EXPECTED in auto mode (track B) or
+    # after a manual/rescue detach (rescue flag). Only flag INCONSISTENT
+    # when nothing accounts for the removal (observe mode, no flag).
+    if [ "$(mode_get)" = "auto" ] || [ -f "$FLAG_RESCUED" ]; then
+      echo "NORMAL"
+    else
+      echo "INCONSISTENT"
+    fi
   elif [ "$HIJACK" = "1" ] && [ "$AGH_PORT_UP" != "1" ]; then
     echo "DOWN_PORT"
   else
