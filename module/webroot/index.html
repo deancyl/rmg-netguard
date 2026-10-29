@@ -538,8 +538,8 @@
   function askCtl(action) {
     if (busy) { setResult('note', '当前有命令在执行，请稍候。'); return; }
     openConfirm(action === 'detach'
-      ? '摘除 AGH 53 劫持？只移除 OUTPUT 上那一条跳转，链体保留，可随时恢复。'
-      : '恢复 AGH 53 劫持？会在 nat OUTPUT 位置 1 插入跳转。',
+      ? '摘除 AGH 53 劫持？只移除 OUTPUT 上那一条跳转，链体保留，可随时恢复。\n注：AGH 无应答/已死时同样执行——这是恢复系统 DNS 的救援方向（fail-open）。'
+      : '恢复 AGH 53 劫持？会在 nat OUTPUT 位置 1 插入跳转。\n注：AGH 未运行时会被健康门拒绝，防止 DNS 黑洞。',
       function () { run(action, function () { refreshFast(); }); });
   }
 

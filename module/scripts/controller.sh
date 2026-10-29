@@ -31,7 +31,16 @@ health_gate() {
 
 do_detach() {
   if hijack_check; then
-    health_gate || { log_event "CTRL" "detach blocked: $(health_gate 2>&1)"; return 2; }
+    # v2.2.2: detaching is the SAFE direction (apps' DNS falls back to the
+    # system resolver, which never depends on AGH). The old health gate here
+    # BLOCKED the only self-rescue path in a DOWN_PORT black hole (AGH dead
+    # + hijack attached) -- exactly when rescue is needed most (2026-10-29
+    # 用户复现: 开着模块仍断网). Fail-open: gate only informs, never blocks.
+    if health_gate >/dev/null 2>&1; then
+      : # AGH healthy -> normal track-B detach
+    else
+      log_event "CTRL" "RESCUE detach (fail-open): AGH dead/not answering, removing hijack anyway to restore system DNS"
+    fi
     if iptables -w -t nat -D OUTPUT -j "$AGH_CHAIN" 2>/dev/null; then
       touch "$FLAG_RESCUED" 2>/dev/null
       log_event "CTRL" "DETACHED OUTPUT -> $AGH_CHAIN (track B, VPN on)"
