@@ -28,6 +28,7 @@ jobs:
           set -euo pipefail
           version="$(sed -n 's/^version=v//p' module/module.prop)"
           test "v${version}" = "${GITHUB_REF_NAME}"
+          python verify_consistency.py
           python build_zip.py
           python verify_zip.py
 

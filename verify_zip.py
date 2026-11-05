@@ -6,7 +6,18 @@ import zipfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SRC = os.path.join(HERE, "module")
-OUT = os.path.join(HERE, "rmg-netguard-v2.2.1.zip")
+
+
+def module_version():
+    """Same single source of truth as build_zip.py (no hardcoded version)."""
+    with open(os.path.join(SRC, "module.prop"), "r", encoding="utf-8") as f:
+        for line in f:
+            if line.startswith("version="):
+                return line.strip().split("=", 1)[1]
+    raise SystemExit("version= not found in module/module.prop")
+
+
+OUT = os.path.join(HERE, "rmg-netguard-%s.zip" % module_version())
 
 z = zipfile.ZipFile(OUT)
 names = z.namelist()

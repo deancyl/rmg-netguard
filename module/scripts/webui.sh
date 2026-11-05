@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# RMG NetGuard v2.0 - WebUI action dispatcher. Every WebUI button calls
+# RMG NetGuard v2.2.4 - WebUI action dispatcher. Every WebUI button calls
 # exactly one command here; output is plain text rendered by index.html.
 # robust MODDIR derivation
 case "$0" in */*) MODDIR="${0%/*}" ;; *) MODDIR=. ;; esac
@@ -10,6 +10,7 @@ case "$MODDIR" in */scripts) MODDIR="${MODDIR%/scripts}" ;; esac
 
 case "$1" in
   status)
+    echo "version=$(sed -n 's/^version=//p' "$MODDIR/module.prop" 2>/dev/null)"
     cat "$LOG_STATE" 2>/dev/null
     echo "---"
     sh "$MODDIR/scripts/controller.sh" status 2>/dev/null
@@ -30,10 +31,12 @@ case "$1" in
     sh "$MODDIR/scripts/config_toggle.sh" status 2>/dev/null
     ;;
   status_fast)
-    # v2.2: auto-refresh path. Same shape as `status` minus the DNS filter
-    # probes (the only slow part: 2x2s nc). Used by the WebUI's 30s poll and
-    # by the click-to-refresh button, so the panel never sits locked for
-    # seconds right after opening. Probe badges simply keep their last value.
+    # v2.2: used by the WebUI's first paint and 30s poll only. The explicit
+    # "刷新状态" button uses the full `status` (probes included). Same shape
+    # as status minus the DNS filter probes (the only slow part: 2x2s nc),
+    # so the panel never sits locked for seconds right after opening.
+    # v2.2.4: also carries the version so the UI never shows a stale number.
+    echo "version=$(sed -n 's/^version=//p' "$MODDIR/module.prop" 2>/dev/null)"
     cat "$LOG_STATE" 2>/dev/null
     echo "---"
     sh "$MODDIR/scripts/controller.sh" status 2>/dev/null
@@ -46,8 +49,8 @@ case "$1" in
     exit $?
     ;;
   log)
-    echo "== events.log 最近 20 行 =="
-    tail -n 20 "$LOG_EVENTS" 2>/dev/null
+    echo "== events.log 最近 50 行 =="
+    tail -n 50 "$LOG_EVENTS" 2>/dev/null
     exit $?
     ;;
   probe)

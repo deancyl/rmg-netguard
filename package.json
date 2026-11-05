@@ -1,6 +1,6 @@
 {
   "name": "rmg-netguard",
-  "version": "2.2.1",
+  "version": "2.2.4",
   "private": true,
   "description": "KernelSU DNS/VPN dual-track guardian",
   "scripts": {

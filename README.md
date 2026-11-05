@@ -1,8 +1,9 @@
 # RMG NetGuard
 
 面向 KernelSU 的 DNS / VPN 双轨守护模块，用于协调 AdGuard Home（AGH）与
-Clash Meta / mihomo 的 DNS 接管关系。默认只观测、不修改网络；自动切换与
-DNS 集成都必须由用户在 WebUI 中显式开启。
+Clash Meta / mihomo 的 DNS 接管关系。默认 `observe`：不自动改变劫持拓扑；
+自动切换与 DNS 集成都必须由用户在 WebUI 中显式开启，且后者一旦开启便独立于
+模式运行（会备份、漂移重打并还原活动 profile）。
 
 [![Latest release](https://img.shields.io/github/v/release/deancyl/rmg-netguard?sort=semver)](https://github.com/deancyl/rmg-netguard/releases/latest)
 [![KernelSU](https://img.shields.io/badge/KernelSU-late--load-2ea44f)](https://kernelsu.org/zh_CN/guide/module.html)
@@ -16,11 +17,9 @@ DNS 集成都必须由用户在 WebUI 中显式开启。
 
 - **双轨拓扑**：VPN 关闭时由 `nat OUTPUT` 劫持 DNS 到 AGH；VPN 开启时可摘除
   劫持，让 mihomo 的上游继续经过 AGH。
-- **默认只观测**：`observe` 模式不下发任何网络规则，适合先部署、看状态、再启用。
-- **健康门控自动切换**：AGH 进程与 5591 DNS 应答都正常时才允许
-  `attach` / `detach`；VPN 状态需连续两轮稳定后才动作。
-- **DNS 集成可逆**：修改 Clash Meta 活动 profile 前自动备份，检测订阅更新导致的
-  漂移并重打补丁，卸载时恢复原配置。
+- **默认只观测**：`observe` 模式不摘取/恢复劫持，只采样与记录；注意 DNS 集成的漂移重打独立于此模式。
+- **切换方向不对称**：`attach`（恢复劫持）要求 AGH 进程与 5591 应答都正常；`detach`（摘除劫持）是恢复系统 DNS 的 **fail-open 救援方向**，AGH 不健康时仍会执行并记 RESCUE 事件。VPN 状态需连续两轮（约 3 分钟）稳定后才自动动作；切换模式本身不立即改变拓扑。
+- **DNS 集成可逆**：修改 Clash Meta 活动 profile 前自动备份，检测订阅更新导致的漂移并重打补丁，卸载时恢复原配置；开启/关闭后都需重开一次 VPN 才生效。
 - **KernelSU WebUI**：顶部常驻状态、快照时间、就近操作反馈、面板内确认、
   自动刷新和单飞任务锁。
 - **可观测**：状态机、事件日志、规则审计、过滤探针和 AGH querylog 统计。
@@ -30,10 +29,12 @@ DNS 集成都必须由用户在 WebUI 中显式开启。
 
 | 模式 | 行为 | 适合场景 |
 |---|---|---|
-| `observe` | 只采样状态，不摘取或恢复劫持 | 首次安装、排障、稳定优先 |
-| `auto` | VPN 稳定开启后摘除劫持；VPN 关闭后恢复劫持 | AGH 与 Clash Meta 已稳定共存 |
+| `observe` | 只采样状态，不摘取或恢复劫持（DNS 集成仍独立运行） | 首次安装、排障、稳定优先 |
+| `auto` | VPN 连续 2 轮稳定开启后摘除劫持；关闭后恢复劫持 | AGH 与 Clash Meta 已稳定共存 |
 
-两条轨道的目标拓扑：
+两条轨道的目标拓扑（轨道 B 的「完整过滤形态」还需 DNS 集成为 mihomo 配置
+`127.0.0.1:5591` 上游并**重开一次 VPN**；未重载时为基础连通形态，能上网但
+不过 AGH 过滤）：
 
 | 轨道 | 条件 | DNS 路径 |
 |---|---|---|
@@ -59,7 +60,7 @@ DNS 集成都必须由用户在 WebUI 中显式开启。
 ### 刷入
 
 1. 从 [Releases](https://github.com/deancyl/rmg-netguard/releases/latest) 下载
-   `rmg-netguard-v2.2.1.zip`。
+   最新的 `rmg-netguard-<版本>.zip`（以 Release 资产为准）。
 2. 在 KernelSU 管理器中安装 zip。
 3. 让模块在下一轮启动中加载，或在 late-load 会话里手动启动一次：
 
@@ -68,7 +69,9 @@ su -c 'sh /data/adb/modules/rmg_netguard/service.sh'
 ```
 
 4. 打开模块 WebUI，先保持“只看不动”，确认状态、AGH 与轨道信息正常。
-5. 需要自动切换时再打开“自动切换”；需要轨道 B 过滤时再打开“DNS 集成”。
+5. 需要自动切换时再打开“自动切换”（拓扑约 3 分钟后自动调整，切换本身不立即
+   改变轨道）；需要轨道 B 过滤时再打开“DNS 集成”，并**重开一次 Clash Meta
+   VPN** 使补丁生效。
 
 升级时直接刷入新 zip。升级会保留 `run/mode`、`run/integration`、事件日志和
 DNS 集成备份；卸载会停止 guard、还原模块持有的 profile 备份，并在必要时恢复
@@ -77,13 +80,12 @@ AGH 劫持。
 ## WebUI
 
 - **顶部状态条**：状态、模式、轨道、AGH、探针和快照年龄始终可见。
-- **只看不动 / 自动切换**：切换前显示面板内确认条，不调用阻塞式原生对话框。
-- **DNS 集成**：以活动 profile 的实际补丁状态为准，可直接开启或还原。
-- **刷新状态**：执行完整状态采集，包含 DNS 过滤探针。
-- **一键体检 / 规则审计 / 拦截统计 / 事件日志**：结果立即显示在顶部结果区，
-  完整文本位于“详细输出”。
-- **每 30 秒自动刷新**：默认开启；后台状态采样周期仍由 guard 的 90 秒间隔决定，
-  页面右上角显示的是最近一次后台快照的时间。
+- **只看不动 / 自动切换**：切换前显示面板内确认条，不调用阻塞式原生对话框；切换后结果带会提示「拓扑约 3 分钟内自动调整」。
+- **DNS 集成**：以活动 profile 的实际补丁状态为准，可直接开启或还原；开启/关闭后结果带会提示「需重开一次 VPN 才生效」。此开关独立于模式。
+- **刷新状态**：执行完整状态采集，包含 DNS 过滤探针；首屏与 30 秒轮询走轻量 `status_fast`（不跑探针）。
+- **一键体检 / 规则审计 / 拦截统计 / 事件日志**：只读诊断；体检约 3–8 秒并产生少量测试流量，事件日志显示最近 50 条。结果立即显示在顶部结果区，完整文本位于“详细输出”。
+- **每 30 秒自动刷新**：默认开启；后台常规采样 90 秒（无 AGH / Clash 空载时 300 秒），页面右上角显示的是最近一次后台快照的时间。
+- **动作分组**：只读诊断与「摘除 / 恢复劫持」在界面上分开标注，后者需二次确认。
 
 操作进行中会锁定动作按钮并显示秒数。重复点击会得到明确提示；命令超过 90 秒
 未返回时自动解除锁定。失败时界面显示红色错误，不再把非零退出码或无输出当作成功。
@@ -92,21 +94,24 @@ AGH 劫持。
 
 1. 自动切换只摘取或插入 `nat OUTPUT` 上的一条
    `OUTPUT -> ADGUARD_REDIRECT_DNS` 跳转，不修改链体。
-2. AGH 不存活或不响应 5591 时，任何方向的自动切换都会被拒绝。
+2. 方向不对称：`attach`（恢复劫持）在 AGH 不存活或 5591 无应答时被健康门拒绝，
+   防止 DNS 黑洞；`detach`（摘除劫持）是恢复系统 DNS 的 fail-open 救援方向，
+   AGH 不健康时仍会执行并记 `RESCUE` 事件。
 3. DNS 集成只处理当前活动的 Clash Meta profile；首份备份不会被覆盖，备份自身
-   含 `NS5591` 时拒绝还原。
+   含 `NS5591` 时拒绝还原；集成的备份/漂移重打/还原独立于工作模式。
 4. `observe` 模式不主动改写网络规则；无 AGH / Clash 时进入 300 秒退避空载。
-5. 所有改动均可通过 WebUI、模块卸载或安全模式回退。不要把未经验证的生产设备
+5. 所有改动均可通过 WebUI、模块卸载或安全模式回退；卸载只还原本模块造成的
+   变更（profile 补丁、曾摘除的劫持）。不要把未经验证的生产设备
    当作测试机。
 
 ## 状态与诊断
 
 | 状态 | 含义 | 建议 |
 |---|---|---|
-| `NORMAL` | 观测到的进程、端口和拓扑一致 | 继续观察 |
+| `NORMAL` | 无已知冲突；`auto` 模式或 rescue 标志下的轨道 B 亦属正常 | 继续观察 |
 | `RISK_COEXIST` | VPN 与 DNS 劫持同时存在，形成串联拓扑 | 可工作，但建议评估是否切到 `auto` |
-| `INCONSISTENT` | AGH 进程存在，但劫持规则缺失 | 检查 AGH 模块与 netfilter |
-| `DOWN_PORT` | 劫持存在，但 5591 未监听 | 优先恢复分辨率，避免 DNS 黑洞 |
+| `INCONSISTENT` | `observe` 模式下，AGH 进程存在但劫持缺失且无 rescue 标志 | 检查 AGH 模块与 netfilter；若刻意在轨道 B，请改用 `auto` |
+| `DOWN_PORT` | 劫持存在，但 5591 未监听 | 优先点「摘除 AGH 劫持」恢复系统 DNS（fail-open），避免黑洞 |
 
 过滤探针显示 `BLOCKED / UNKNOWN` 时只表示两个测试域名结果不一致，可能是域名
 策略或单域名超时，不能单独据此判定 AGH 整体故障。querylog 长时间没有新记录也
@@ -165,8 +170,10 @@ module/
     webui.sh           WebUI 命令分发
   webroot/index.html   KernelSU WebUI
 tests/webui/           Chromium 交互回归测试
-build_zip.py           构建模块 zip
+tests/ng_*.sh          一次性设备运维脚本（手工取证/部署，非自动测试套件）
+build_zip.py           构建模块 zip（版本读自 module.prop）
 verify_zip.py          校验 zip 与源码一致
+verify_consistency.py  版本与关键说明一致性断言（CI 门禁）
 ```
 
 ## 已知限制
@@ -180,8 +187,11 @@ verify_zip.py          校验 zip 与源码一致
 
 ## 版本
 
-当前版本：`v2.2.1`（`versionCode=23`）。版本号使用 SemVer；发布 zip 应与
-Git tag、`module.prop` 和 Release 标题保持一致。
+当前主线版本：`v2.2.4`（`versionCode=26`）；最新 Release tag 为 `v2.2.1`
+（v2.2.2 / v2.2.3 / v2.2.4 已合入 `main`，尚未打 tag，见 CHANGELOG）。
+版本号使用 SemVer；`module.prop` 是唯一版本源，`build_zip.py`、`verify_zip.py`、
+WebUI 显示、README、Wiki 与 CHANGELOG 由 `verify_consistency.py` 统一校验，
+发布 zip 应与 Git tag 和 Release 标题保持一致。
 
 作者：`deanc` · 项目地址：
 [deancyl/rmg-netguard](https://github.com/deancyl/rmg-netguard)

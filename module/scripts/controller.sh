@@ -16,9 +16,11 @@ case "$MODDIR" in */scripts) MODDIR="${MODDIR%/scripts}" ;; esac
 
 mkdir -p "$RUN" "$BKDIR" 2>/dev/null
 
-# health gate: BOTH directions require AGH alive AND answering on 5591.
-# (attaching the hijack with AGH dead = full DNS black hole; detaching
-# with mihomo's AGH upstream dead = track B resolution failure.)
+# health gate (v2.2.2+): required for ATTACH only. Attach with AGH dead =
+# full DNS black hole. DETACH is the fail-open rescue direction (removing the
+# hijack restores the system resolver, which never depends on AGH) and is
+# never blocked by this gate; it only logs a RESCUE marker when the gate
+# would have failed. See do_detach/do_attach.
 health_gate() {
   AGH_PID=$(pidof "$AGH_PROC" 2>/dev/null)
   [ -n "$AGH_PID" ] || { echo "GATE: AGH process not running"; return 1; }

@@ -14,8 +14,8 @@ AdGuard Home 与 Clash Meta / mihomo 的 DNS 路径。默认 `observe`，只有�
 
 ## 当前版本
 
-- 最新发布：`v2.2.1`
-- `versionCode`：`23`
+- 主线版本：`v2.2.4`（`versionCode=26`，已合入 `main` 并部署验证设备）
+- 最新 Release tag：`v2.2.1`；v2.2.2–v2.2.4 为主线提交，尚未打 tag，见 [CHANGELOG](https://github.com/deancyl/rmg-netguard/blob/main/CHANGELOG.md)
 - 模块 ID：`rmg_netguard`
 - 已验证环境：KernelSU 3.3.1 late-load、Android 16、SM-S9180
 - 默认模式：`observe`（只看不动）
@@ -32,12 +32,22 @@ AdGuard Home 与 Clash Meta / mihomo 的 DNS 路径。默认 `observe`，只有�
 
 ## 设计原则
 
-- 默认不干预。
-- 动作前必须通过 AGH 健康门控。
-- 只改变一条 `nat OUTPUT` 跳转，不重建 AGH 链体。
-- profile 修改先备份，漂移可重打，卸载可恢复。
+- 默认不干预：不自动改变劫持拓扑；但 DNS 集成一旦开启，其漂移重打独立于模式。
+- `attach`（恢复劫持）必须通过 AGH 健康门控；`detach`（摘除劫持）是 fail-open 救援方向，不受门控阻断。
+- 只改变一条 `nat OUTPUT` 跳转，不重建 AGH 链体；profile 修改先备份、可还原。
 - 失败必须返回非零状态并在 WebUI 红色显示。
 - 不使用阻塞式 `confirm` / `alert`。
+
+## 术语对照
+
+| WebUI 用语 | 脚本 / 日志用语 | 含义 |
+|---|---|---|
+| 只看不动 | `observe`、`MODE_FILE=observe` | 不自动摘/挂劫持 |
+| 自动切换 | `auto`、`double-track` | VPN 稳定态后自动摘/挂劫持 |
+| 摘除 AGH 劫持 | `detach`、`track B`、`RESCUE` | 移除 OUTPUT 跳转 |
+| 恢复 AGH 劫持 | `attach`、`track A` | 插回 OUTPUT 跳转 |
+| DNS 集成 | `NS5591`、`integration`、`profile 补丁` | 活动 profile 上游指向 AGH:5591 |
+| AGH 53 劫持 | `ADGUARD_REDIRECT_DNS` 链跳转 | nat OUTPUT 上的那一条 jump |
 
 ## 相关链接
 

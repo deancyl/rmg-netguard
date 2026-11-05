@@ -79,10 +79,10 @@
   </div>
 
   <div class="wrap">
-    <h1>RMG NetGuard <span style="font-size:12px;color:#7d8792">v2.2.1</span></h1>
-    <div class="sub">DNS / VPN 双轨守护 · 默认只看不动 · 所有切换健康门控且可逆</div>
+    <h1>RMG NetGuard <span style="font-size:12px;color:#7d8792" id="ui_ver">v2.2.4</span></h1>
+    <div class="sub">DNS / VPN 双轨守护 · 默认只看不动 · 切换可逆 · 救援方向不设健康门</div>
 
-    <div class="hint" style="margin:-6px 0 12px">状态每 90 秒由后台刷新一次；此处显示的是最近一次采样，右上角为距今时间。</div>
+    <div class="hint" style="margin:-6px 0 12px">后台常规每 90 秒采样一次（无 AGH / Clash 空载时 300 秒）；此处显示最近一次快照，右上角为距今时间。页面每 30 秒只是重读快照，不是重新采样。</div>
 
     <details>
       <summary>当前拓扑</summary>
@@ -110,17 +110,21 @@
       <div class="kv"><span>过滤探针</span><b id="st_probe">未检测</b></div>
       <div class="kv"><span>AGH 日志年龄</span><b id="st_qage">--</b></div>
       <div id="st_env" style="margin-top:6px"></div>
-      <div class="hint">只看不动 = 零干预，只记录状态。自动切换 = VPN 稳定开启后摘掉劫持、关闭后恢复劫持；每次动作前都强制检查 AGH 存活与 5591 应答。DNS 集成 = 把 Clash Meta 活动配置的上游指向 AGH（自动备份、自动重打、可一键还原）。AGH 未安装时模块自动空载，不等待、不写网络。</div>
+      <div class="hint">只看不动（observe）= 不自动摘除或恢复劫持，只采样与记录；但 DNS 集成一旦开启，其备份、订阅漂移重打与还原会独立运行（不受模式影响），且采样本身会产生少量测试流量。自动切换（auto）= VPN 状态连续 2 轮（约 3 分钟）稳定后才摘除/恢复劫持；切换模式本身不会立即改变当前轨道，需要立即生效请手动摘除/恢复。恢复劫持（attach）前强制检查 AGH 存活与 5591 应答；摘除劫持（detach）是恢复系统 DNS 的救援方向，AGH 不健康时仍会执行（fail-open），并在事件日志记录 RESCUE。DNS 集成 = 备份并把 Clash Meta 活动配置的上游指向 AGH，开启/关闭后都需重开一次 VPN 才生效，可一键还原。AGH 未运行时探针即时跳过；AGH 与 Clash 均未安装时模块进入 300 秒退避空载。</div>
     </div>
 
+    <div class="hint" style="margin:0 0 6px">以下 5 项为只读诊断（一键体检约 3–8 秒，会产生少量测试 DNS / HTTP 流量）：</div>
     <div class="btns">
-      <button onclick="refreshAll()">刷新状态</button>
-      <button onclick="run('probe')">一键体检</button>
-      <button onclick="run('audit')">规则审计</button>
-      <button onclick="run('stats')">拦截统计</button>
-      <button class="wide" onclick="run('log')">事件日志（最近 20 条）</button>
-      <button class="danger" onclick="askCtl('detach')">摘除 AGH 劫持</button>
-      <button onclick="askCtl('attach')">恢复 AGH 劫持</button>
+      <button onclick="refreshAll()" title="完整采集，包含过滤探针">刷新状态</button>
+      <button onclick="run('probe')" title="只读探测，约 3–8 秒，会产生少量测试 DNS / HTTP 流量">一键体检</button>
+      <button onclick="run('audit')" title="只读检查 profile 与规则风险">规则审计</button>
+      <button onclick="run('stats')" title="读取 AGH querylog 近段统计">拦截统计</button>
+      <button class="wide" onclick="run('log')" title="只读，显示最近 50 条模块事件">事件日志（最近 50 条）</button>
+    </div>
+    <div class="hint" style="margin:0 0 6px;color:#c08a8a">以下 2 项会改变网络路径，均需二次确认：</div>
+    <div class="btns">
+      <button class="danger" id="btn_detach" onclick="askCtl('detach')" title="移除 nat OUTPUT 上一条跳转；AGH 不健康时同样执行（fail-open 救援）">摘除 AGH 劫持</button>
+      <button id="btn_attach" onclick="askCtl('attach')" title="在 nat OUTPUT 位置 1 插入跳转；AGH 未运行时会被健康门拒绝">恢复 AGH 劫持</button>
     </div>
 
     <details>
@@ -131,7 +135,7 @@
     <div class="row">
       <input type="checkbox" id="autoref" checked> <label class="auto" for="autoref">每 30 秒自动刷新状态</label>
     </div>
-    <div class="hint">安全边界：模块只操作 nat OUTPUT 上那一条跳转规则（链体从不触碰）；AGH 不应答时任何切换都会被拒绝；卸载时自动还原劫持与配置补丁。</div>
+    <div class="hint">安全边界：① 自动切换只摘取或插入 nat OUTPUT 上那一条跳转，链体从不触碰；② 恢复劫持需 AGH 存活且 5591 应答，否则拒绝（防止 DNS 黑洞）；摘除劫持为 fail-open 救援方向，AGH 不健康时仍执行；③ DNS 集成开启时会先备份、再改写 Clash Meta 活动 profile，可一键还原，卸载时自动还原模块持有的备份与曾摘除的劫持；④ 无 AGH / Clash 时进入纯观测空载，不写 netfilter。</div>
   </div>
 
 <script>
@@ -284,8 +288,27 @@
       show(text || '(无输出)');
       var first = (stdout || '').split('\n')[0] || '';
       var failed = !!errno || /^FAIL:/m.test(stdout || '');
+      // v2.2.4: tell the user what to expect AFTER the action, not just "done".
+      // Without this, "mode changed" looks broken for ~3min and an integ
+      // patch looks active while mihomo still needs a VPN restart.
+      var extra = '';
+      if (!failed && (sub === 'mode_auto' || sub === 'mode_observe')) {
+        extra = '\n模式已切换；拓扑将在约 3 分钟（2 轮 × 90 秒）内自动调整，切换本身不会立即改变当前轨道。需立即生效请手动摘除/恢复劫持。';
+      } else if (!failed && sub === 'integ_on') {
+        extra = '\n补丁已写入活动配置；需重开一次 Clash Meta VPN 才会生效。';
+      } else if (!failed && sub === 'integ_off') {
+        extra = '\n已从备份还原活动配置；需重开一次 Clash Meta VPN 才会生效。';
+      } else if (!failed && sub === 'detach') {
+        extra = (first.indexOf('already') >= 0)
+          ? '\n当前已处于摘除状态，无需改动。'
+          : '\n已摘除：应用 DNS 回落系统解析器（AGH 不健康时同样执行，属救援方向）。';
+      } else if (!failed && sub === 'attach') {
+        extra = (first.indexOf('already') >= 0)
+          ? '\n当前已处于挂载状态，无需改动。'
+          : '\n已恢复劫持：应用 DNS 重新经由 AGH。';
+      }
       setResult(failed ? 'err' : 'ok',
-        (failed ? '失败：' : '完成：') + (LABEL[sub] || sub) + (first ? '\n' + first : ''));
+        (failed ? '失败：' : '完成：') + (LABEL[sub] || sub) + (first ? '\n' + first : '') + extra);
       if (done) { done(); }
     });
   }
@@ -371,6 +394,10 @@
     var rest = lines.filter(function (x) { return x.charAt(0) !== '{'; }).join('\n').trim();
     lastSnapshot = s;
     lastRest = rest;
+    // v2.2.4: version comes from module.prop via webui.sh (single source of
+    // truth). The static v2.2.4 in the H1 is only a fallback for old builds.
+    var ver = /version=(v[0-9.]+)/.exec(rest);
+    if (ver) { document.getElementById('ui_ver').textContent = ver[1]; }
     renderHeader(s, rest);
 
     // state card
@@ -428,10 +455,11 @@
       if (w && w !== 'SKIP') {
         html += ' <span class="badge ' + (w === 'BLOCKED' ? 'ok' : (w === 'OPEN' ? 'risk' : 'warn')) + '">wedge ' + w + '</span>';
         if (v === 'BLOCKED' && w === 'UNKNOWN') {
-          html += ' <span class="badge warn">双探针结果不一致</span>';
+          html += ' <span class="badge warn" title="两个测试域名结果不同：可能是域名策略、缓存或单次 UDP 超时；仅提示，不代表 AGH 故障。请结合 querylog 与实际过滤效果判断。">双探针结果不一致 ℹ</span>';
         }
       }
       prEl.innerHTML = html;
+      prEl.title = 'BLOCKED=测试域名被拦截 / OPEN=得到真实解析 / UNKNOWN=未拿到可判定应答 / SKIP=AGH 未运行';
     } else if (!s || !s.agh_pid) {
       prEl.textContent = '未检测（AGH 未运行）';
     }
@@ -440,13 +468,13 @@
     var qaEl = document.getElementById('st_qage');
     if (qa) {
       var age = parseInt(qa[1], 10);
-      qaEl.innerHTML = '<span class="badge mut">' + (age >= 0 ? age + 's' : 'n/a') + '</span>';
+      qaEl.innerHTML = '<span class="badge mut" title="querylog 文件最近修改时间。深夜无查询、缓存命中或写入策略变化都会让它增长，仅提示，不代表 AGH 故障。">' + (age >= 0 ? age + 's' : 'n/a') + ' ℹ</span>';
     } else { qaEl.textContent = '--'; }
 
     var envEl = document.getElementById('st_env');
     var aghDead = s && !s.agh_pid && !s.agh_port;
     if (fp && fp[1] === 'SKIP' && aghDead) {
-      envEl.innerHTML = '<span class="badge info">AGH 未运行：过滤探针已跳过。未安装 AGH/Clash 时模块为纯观测空载。</span>';
+      envEl.innerHTML = '<span class="badge info">AGH 未运行：过滤探针已跳过（即时返回，无等待）。若 AGH 与 Clash 均未安装，模块会进入 300 秒退避的纯观测空载。</span>';
     } else { envEl.innerHTML = ''; }
 
     document.getElementById('btn_obs').disabled = (modeTxt === 'observe');
@@ -516,11 +544,11 @@
     if (busy) { setResult('note', '当前有命令在执行，请稍候。'); return; }
     if (m === 'auto') {
       if (lastMode === 'auto') { setResult('note', '当前已经是自动切换模式。'); return; }
-      openConfirm('切换到「自动切换」？VPN 稳定开启后模块会自动摘掉 AGH 劫持，关闭后恢复；每次动作前都会检查 AGH 健康。',
+      openConfirm('切换到「自动切换」？VPN 连续 2 轮（约 3 分钟）稳定开启后自动摘掉 AGH 劫持，关闭后恢复；恢复前强制检查 AGH 健康，摘除为 fail-open 救援方向。\n注意：切换本身不会立即改变当前轨道。',
         function () { run('mode_auto', function () { refreshFast(); }); });
     } else {
       if (lastMode === 'observe') { setResult('note', '当前已经是只看不动模式。'); return; }
-      openConfirm('切换到「只看不动」？模块将停止自动切换，并保持当前拓扑不变。',
+      openConfirm('切换到「只看不动」？模块将停止自动切换，保持当前拓扑不变。\n注意：DNS 集成的漂移重打独立于模式，仍会继续运行；如需停止请单独关闭集成。',
         function () { run('mode_observe', function () { refreshFast(); }); });
     }
   }
@@ -528,18 +556,22 @@
     if (busy) { setResult('note', '当前有命令在执行，请稍候。'); return; }
     if (lastInteg === null) { setResult('note', '集成状态未知，请先点「刷新状态」。'); return; }
     if (lastInteg) {
-      openConfirm('关闭 DNS 集成？将从备份还原 Clash Meta 活动配置（移除 NS5591），需要重开 VPN 才生效。',
+      openConfirm('关闭 DNS 集成？将从首份备份还原 Clash Meta 活动配置（移除 NS5591）。\n需重开一次 VPN 才生效；此开关独立于只看不动/自动切换模式。',
         function () { run('integ_off', function () { refreshFast(); }); });
     } else {
-      openConfirm('开启 DNS 集成？会先备份、再把 Clash Meta 活动配置的上游指向 AGH（127.0.0.1:5591），订阅更新后自动重打；随时可一键还原。',
+      openConfirm('开启 DNS 集成？会先备份、再把 Clash Meta 活动配置的上游指向 AGH（127.0.0.1:5591），订阅更新后自动重打；随时可一键还原。\n需重开一次 VPN 才生效；开启后即使在只看不动模式下，看门狗也会自动重打补丁。',
         function () { run('integ_on', function () { refreshFast(); }); });
     }
   }
   function askCtl(action) {
     if (busy) { setResult('note', '当前有命令在执行，请稍候。'); return; }
+    var pre = '';
+    if (action === 'attach' && lastSnapshot && (!lastSnapshot.agh_pid || !lastSnapshot.agh_port)) {
+      pre = '\n⚠ 当前 AGH 未运行或 5591 无应答，此操作预计会被健康门拒绝。';
+    }
     openConfirm(action === 'detach'
       ? '摘除 AGH 53 劫持？只移除 OUTPUT 上那一条跳转，链体保留，可随时恢复。\n注：AGH 无应答/已死时同样执行——这是恢复系统 DNS 的救援方向（fail-open）。'
-      : '恢复 AGH 53 劫持？会在 nat OUTPUT 位置 1 插入跳转。\n注：AGH 未运行时会被健康门拒绝，防止 DNS 黑洞。',
+      : '恢复 AGH 53 劫持？会在 nat OUTPUT 位置 1 插入跳转。\n注：AGH 未运行时会被健康门拒绝，防止 DNS 黑洞。' + pre,
       function () { run(action, function () { refreshFast(); }); });
   }
 
