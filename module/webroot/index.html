@@ -79,7 +79,7 @@
   </div>
 
   <div class="wrap">
-    <h1>RMG NetGuard <span style="font-size:12px;color:#7d8792" id="ui_ver">v2.2.4</span></h1>
+    <h1>RMG NetGuard <span style="font-size:12px;color:#7d8792" id="ui_ver">v2.2.5</span></h1>
     <div class="sub">DNS / VPN 双轨守护 · 默认只看不动 · 切换可逆 · 救援方向不设健康门</div>
 
     <div class="hint" style="margin:-6px 0 12px">后台常规每 90 秒采样一次（无 AGH / Clash 空载时 300 秒）；此处显示最近一次快照，右上角为距今时间。页面每 30 秒只是重读快照，不是重新采样。</div>
@@ -395,7 +395,7 @@
     lastSnapshot = s;
     lastRest = rest;
     // v2.2.4: version comes from module.prop via webui.sh (single source of
-    // truth). The static v2.2.4 in the H1 is only a fallback for old builds.
+    // truth). The static v2.2.5 in the H1 is only a fallback for old builds.
     var ver = /version=(v[0-9.]+)/.exec(rest);
     if (ver) { document.getElementById('ui_ver').textContent = ver[1]; }
     renderHeader(s, rest);

@@ -14,8 +14,8 @@ AdGuard Home 与 Clash Meta / mihomo 的 DNS 路径。默认 `observe`，只有�
 
 ## 当前版本
 
-- 主线版本：`v2.2.4`（`versionCode=26`，已合入 `main` 并部署验证设备）
-- 最新 Release tag：`v2.2.1`；v2.2.2–v2.2.4 为主线提交，尚未打 tag，见 [CHANGELOG](https://github.com/deancyl/rmg-netguard/blob/main/CHANGELOG.md)
+- 主线版本：`v2.2.5`（`versionCode=27`，已合入 `main` 并部署验证设备）
+- 最新 Release tag：`v2.2.1`；v2.2.2–v2.2.5 为主线提交，尚未打 tag，见 [CHANGELOG](https://github.com/deancyl/rmg-netguard/blob/main/CHANGELOG.md)
 - 模块 ID：`rmg_netguard`
 - 已验证环境：KernelSU 3.3.1 late-load、Android 16、SM-S9180
 - 默认模式：`observe`（只看不动）

@@ -2,6 +2,21 @@
 
 本项目使用语义化版本。发布记录以 GitHub Releases 为准；标注「主线提交」的版本已合入 `main` 并部署到验证设备，但未创建 Release tag。
 
+## v2.2.5 - 2026-11-06
+
+### 修复（零网络干预，隔离回归 24/24 通过）
+
+- `config_toggle.sh` 支持**块列表格式**的 `nameserver:`（此前只认行内数组，遇到
+  `nameserver:` + `- item` 的 profile 会永久 `FAIL: ambiguous nameserver lines (0)`，
+  即 10-28 那 27 次补丁风暴的根因）；新增 awk 生成器，同时保留行内数组支持，
+  并用截断重写保留 uid/SELinux context。
+- 集成看门狗改为「只重打本模块曾经打过、后被覆盖的补丁」（marker 存在才动作）：
+  不再见到 unpatched 就重打，避免覆盖用户手工配置的国内 DoH、也杜绝空转风暴。
+- `rules_audit.sh` 修正误报：`RULE-SET,cn` / `cn-ip` / `GEOSITE,CN` 属等价的
+  域名层直连覆盖，输出 INFO 而非 WARN；仍建议补 `GEOIP,CN,DIRECT` 作为 IP 兜底。
+- 新增 `tests/test_config_toggle.sh`（隔离目录，覆盖两种 YAML 形态、备份/还原、
+  看门狗两类场景与审计判据）；`verify_consistency.py` 增加对应源码断言。
+
 ## v2.2.4 - 2026-11-05
 
 ### 文档与 WebUI 说明一致性（零守护逻辑改动）

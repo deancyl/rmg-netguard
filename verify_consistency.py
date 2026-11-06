@@ -133,6 +133,9 @@ REQUIRED = {
     "wiki/安装与升级.md": ["重开一次", "verify_consistency.py"],
     "wiki/开发与验证.md": ["唯一版本源", "verify_consistency.py"],
     "module/scripts/webui.sh": ["version=", "最近 50 行"],
+    "module/scripts/config_toggle.sh": ["patch_nameserver()", "block-list", "[ -f \"$MARK\" ] || return 0"],
+    "module/scripts/rules_audit.sh": ["RULE-SET,(cn|cn-ip|china)", "有 RULE-SET/GEOSITE 国内直连覆盖"],
+    "tests/test_config_toggle.sh": ["block-list", "auto: no marker", "re-apply"],
 }
 
 for rel, needles in FORBIDDEN.items():

@@ -1,18 +1,22 @@
 #!/system/bin/sh
-# RMG NetGuard v2.0 - DNS integration toggle for Clash Meta active profile.
+# RMG NetGuard v2.2.5 - DNS integration toggle for Clash Meta active profile.
 # Applies/reverts nameserver -> 127.0.0.1:5591 in the ACTIVE profile's
 # config.yaml so mihomo routes its upstream through AGH (track B filter).
 #
 # apply  : backup once (never overwrite first backup), patch, record md5
 # revert : restore from first backup (user data wins)
 # status : patched? backup? drifted? (profile changed since last apply)
-# auto   : re-apply when drifted (guard-loop watchdog entry point)
+# auto   : re-apply ONLY when a patch we previously applied was lost
 #
-# Notes learned on-device (2026-10-15):
+# Notes learned on-device (2026-10-15 / 2026-11-06):
 # - CMFA override.json is SUPPRESSED by the profile's own dns: section, so
 #   patching the profile file is the only working hook.
 # - subscription updates rewrite the imported profile -> drift detection +
 #   auto-reapply is mandatory (WebUI "integration" toggle owns this).
+# - nameserver has TWO yaml shapes: inline array `nameserver: [ ... ]` and
+#   block list `nameserver:` + `- item` lines. v2.2.5 supports both; the old
+#   sed only matched the inline form and refused block-list profiles forever
+#   (FAIL: ambiguous nameserver lines (0) -> 27-retry storm on 2026-10-28).
 # - never sed -i: it breaks uid/SELinux context. Use truncate-rewrite.
 case "$0" in */*) MODDIR="${0%/*}" ;; *) MODDIR=. ;; esac
 MODDIR=$(cd "$MODDIR" 2>/dev/null && pwd) || MODDIR=""
@@ -40,9 +44,42 @@ marker_path() {
   echo "$BKDIR/${TARGET_UUID}.yaml.patched"
 }
 
-# count top-level nameserver list lines (guard against ambiguous yaml)
+# Count the `nameserver:` key, accepting BOTH yaml shapes (v2.2.5).
+# Deliberately does NOT match default-nameserver / direct-nameserver /
+# nameserver-policy / proxy-server-nameserver.
 ns_line_count() {
-  grep -cE '^[[:space:]]*nameserver: \[' "$TARGET_FILE" 2>/dev/null
+  grep -cE '^[[:space:]]*nameserver:[[:space:]]*($|\[)' "$TARGET_FILE" 2>/dev/null
+}
+
+# Rewrite the nameserver value to NS5591, preserving all other lines and the
+# original indentation. Emits to stdout; caller truncates into the target
+# (preserves inode/uid/SELinux context). Exits 2 if the layout is ambiguous.
+# Output uses a bare yaml scalar (127.0.0.1:5591), valid in both flow and
+# block sequences and avoids nested shell quotes.
+patch_nameserver() {
+  awk -v ns="$NS5591" '
+    BEGIN { state = 0; emitted = 0; found = 0 }
+    /^[[:space:]]*nameserver:[[:space:]]*\[/ {
+      match($0, /^[[:space:]]*/)
+      print substr($0, 1, RLENGTH) "nameserver: [" ns "]"
+      found++; next
+    }
+    /^[[:space:]]*nameserver:[[:space:]]*$/ {
+      print $0
+      state = 1; emitted = 0; found++; next
+    }
+    state == 1 && /^[[:space:]]*-[[:space:]]/ {
+      if (!emitted) {
+        match($0, /^[[:space:]]*/)
+        print substr($0, 1, RLENGTH) "- " ns
+        emitted = 1
+      }
+      next
+    }
+    state == 1 { state = 0 }
+    { print }
+    END { if (found != 1) exit 2 }
+  ' "$TARGET_FILE"
 }
 
 do_apply() {
@@ -59,9 +96,13 @@ do_apply() {
     cp -a "$TARGET_FILE" "$ORIG" || { echo "FAIL: backup failed"; return 1; }
     log_event "INTEG" "backup saved: $ORIG"
   fi
-  # patch via truncate-rewrite (preserves inode, uid, SELinux context)
-  sed -E "s/^([[:space:]]*)nameserver: \[.*\]$/\1nameserver: ['$NS5591']/" \
-      "$TARGET_FILE" > "$RUN/.integ.tmp" || { echo "FAIL: sed error"; return 1; }
+  # patch via generated content + truncate-rewrite (preserves inode, uid,
+  # SELinux context). v2.2.5: handles inline-array AND block-list shapes.
+  if ! patch_nameserver > "$RUN/.integ.tmp" 2>/dev/null; then
+    rm -f "$RUN/.integ.tmp"
+    echo "FAIL: patch generation failed (unsupported nameserver layout)"
+    return 1
+  fi
   if ! grep -q "$NS5591" "$RUN/.integ.tmp"; then
     rm -f "$RUN/.integ.tmp"
     echo "FAIL: patch did not take effect"
@@ -110,18 +151,23 @@ do_status() {
 }
 
 do_auto() {
-  # guard-loop watchdog: keep integration consistent when enabled
+  # v2.2.5: only repair a patch WE previously applied (marker exists).
+  # Old logic re-applied ANY unpatched profile -> 27-retry storm on
+  # 2026-10-28, and would silently overwrite a user's deliberate config
+  # (e.g. domestic DoH) while the flag happens to be "on".
+  # First-time patching is exclusively the WebUI "开启 DNS 集成" action.
   [ "$(integ_get)" = "on" ] || return 0
   target_file || return 0
   MARK="$(marker_path)"
+  [ -f "$MARK" ] || return 0
   st=$(integration_check)
   if [ "$st" = "unpatched" ]; then
-    log_event "INTEG" "drift detected (unpatched), re-applying"
+    log_event "INTEG" "drift detected (patch lost), re-applying"
     do_apply >/dev/null 2>&1
-  elif [ -f "$MARK" ] && [ -f "$TARGET_FILE" ]; then
+  else
     cur=$(md5sum "$TARGET_FILE" | cut -d' ' -f1)
     want=$(cat "$MARK" 2>/dev/null)
-    if [ "$cur" != "$want" ] && grep -q "$NS5591" "$TARGET_FILE"; then
+    if [ "$cur" != "$want" ]; then
       # content changed but still patched (e.g. subscription update) -> refresh marker
       md5sum "$TARGET_FILE" | cut -d' ' -f1 > "$MARK" 2>/dev/null
       log_event "INTEG" "marker refreshed after profile change ($TARGET_UUID)"

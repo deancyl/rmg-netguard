@@ -14,10 +14,16 @@ check_rules_file() {
   # check_rules_file <label> <yaml-path>
   local label="$1" f="$2"
   [ -r "$f" ] || { echo "INFO  $label: 配置不可读($f)"; return; }
+  # v2.2.5: RULE-SET,cn / cn-ip / GEOSITE,CN are equivalent domain-layer
+  # coverage. Calling them "no GEOIP,CN fallback -> all traffic proxied"
+  # was a false positive on RULE-SET-style profiles (verified 2026-11-06:
+  # cn.mrs 532KB fresh, domestic egress measured as direct).
   if grep -q 'GEOIP,CN' "$f" 2>/dev/null; then
-    echo "OK    $label: 含 GEOIP,CN 直连兜底"
+    echo "OK    $label: 含 GEOIP,CN 直连兜底（IP 层）"
+  elif grep -qE 'RULE-SET,(cn|cn-ip|china),DIRECT|GEOSITE,(CN|cn),DIRECT|DOMAIN-SUFFIX,cn,DIRECT' "$f" 2>/dev/null; then
+    echo "INFO  $label: 有 RULE-SET/GEOSITE 国内直连覆盖（域名层），建议补 GEOIP,CN,DIRECT 作为 IP 兜底"
   else
-    echo "WARN  $label: 缺 GEOIP,CN,DIRECT 兜底 -> 未命中域名规则的国内流量全部落入 MATCH 兜底组(经代理)"
+    echo "WARN  $label: 无国内直连兜底 -> 未命中规则的国内流量落入 MATCH 兜底组(经代理)"
     W=$(( W + 1 ))
   fi
   if grep -q 'GEOIP,LAN' "$f" 2>/dev/null; then

@@ -1,6 +1,6 @@
 id=rmg_netguard
 name=RMG NetGuard 网络DNS守护
-version=v2.2.4
-versionCode=26
+version=v2.2.5
+versionCode=27
 author=deanc
-description=RMG NetGuard v2.2.4｜DNS/VPN 双轨守护：默认只看不动；可选自动切换（attach 健康门控、detach fail-open 救援、flock+滞留防抖）；DNS 集成（Clash Meta 活动配置 NS5591 补丁：备份/漂移重打/一键还原，独立于模式，改动需重开 VPN 生效）；WebUI 常驻状态条+动态版本+就近反馈+面板内确认；无 AGH/Clash 时纯观测空载；卸载自动还原本模块造成的变更
+description=RMG NetGuard v2.2.5｜DNS/VPN 双轨守护：默认只看不动；可选自动切换（attach 健康门控、detach fail-open 救援、flock+滞留防抖）；DNS 集成（Clash Meta 活动配置 NS5591 补丁：备份/漂移重打/一键还原，独立于模式，改动需重开 VPN 生效）；WebUI 常驻状态条+动态版本+就近反馈+面板内确认；无 AGH/Clash 时纯观测空载；卸载自动还原本模块造成的变更
