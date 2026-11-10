@@ -2,6 +2,51 @@
 
 本项目使用语义化版本。发布记录以 GitHub Releases 为准；标注「主线提交」的版本已合入 `main` 并部署到验证设备，但未创建 Release tag。
 
+## v2.3.0 - 2026-11-10（主线提交）
+
+### 修复：代理节点流量异常增加（取证确认的三条根因）
+
+**根因 1：AGH upstream 1.12.12.12 进入 tun0 走代理节点**
+- AGH 的 `upstream_dns` 包含 `https://1.12.12.12/dns-query`；1.12.12.12 作为
+  APNIC Anycast 地址进入 tun0 后，在 Fake-IP 轨道 B 下 cn-ip 规则带 `no-resolve`
+  跳过，又无 `GEOIP,CN,DIRECT` 兜底，全部落入 `MATCH,proxy` 走代理节点。
+  从设备端日志实证：AGH bin.log 大量 `1.12.12.12:443 timeout/EOF`，tun0 RX 达 944 MB。
+- 修复：在设备端 `/data/adb/agh/bin/AdGuardHome.yaml` 中将 `upstream_dns` 移除
+  `1.12.12.12`，统一使用纯 IP 格式国内 DoH（`223.5.5.5`、`223.6.6.6`）。
+
+**根因 2：config_toggle apply 从未成功执行，DNS 集成名义 on 但内存无效**
+- 取证实证：`status = unpatched backup=no drifted=no`，说明 NS5591 从未写入，
+  marker 也不存在，do_auto 看门狗故意跳过（v2.2.5 的防风暴保护机制）。
+- `patch_nameserver` 仅修改磁盘文件，CMFA 在 VPN 存活期间不会自动重载，
+  导致即便磁盘已打补丁，mihomo 内存中依然跑原始配置。
+
+**根因 3：GEOIP,CN,DIRECT 缺失导致 Fake-IP 轨道 B 国内流量落入 MATCH**
+- 轨道 B（hijack=0）下 App 拿到 Fake-IP（198.18.x.x），cn-ip 规则带 `no-resolve`
+  对 Fake-IP 直接跳过，若无不带 `no-resolve` 的 `GEOIP,CN,DIRECT`，所有未命中
+  域名规则的国内流量 100% 落入 MATCH+proxy。
+
+### 功能变更
+
+- **`config_toggle.sh`（v2.3.0）**：
+  - `do_apply` 新增 `patch_geoip_rule()`：在 `- MATCH` 前注入
+    `- GEOIP,CN,DIRECT`（幂等，已存在时跳过），防止 Fake-IP 在轨道 B 下泄漏到代理。
+  - `do_apply`、`do_revert`、`do_auto` 完成写盘后调用 `broadcast_reload()`，
+    向 CMFA 发送 `ACTION_PROFILE_CHANGED` 广播，触发 mihomo 内存热重载，
+    消除「磁盘已打补丁但内存仍跑旧配置」的盲区。
+  - `do_auto` 增加内容漂移再打逻辑：订阅更新后 marker MD5 变化（即便 NS 仍在）
+    也触发 `do_apply` 以恢复 GEOIP 规则并刷新 marker。
+  - `do_status` 新增 `geoip: yes/no` 字段。
+- **`env.sh`（v2.3.0）**：
+  - PATH 预插 `/data/adb/ksu/bin`（KernelSU busybox，存在时才加）。
+  - `dns_latency_ms` 改用 `--head` 只发 HEAD 请求，避免拉取页面正文穿透 tun0。
+- **`customize.sh`（v2.3.0）**：
+  - 版本号从 `module.prop` 动态读取，消除硬编码 `v2.2.1` 残留。
+  - 安装时检测旧 `run/` 目录，自动迁移 mode/integration/events.log/config/backups
+    到新模块路径，升级不再丢失用户设置与历史数据。
+- **`tests/test_config_toggle.sh`（v2.3.0）**：
+  - 新增：GEOIP 注入断言（inline/block 两形态）、幂等性断言、订阅漂移后 do_auto
+    恢复 GEOIP 的场景、`status` 包含 `geoip:` 字段断言。
+
 ## v2.2.5 - 2026-11-06
 
 ### 修复（零网络干预，隔离回归 24/24 通过）

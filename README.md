@@ -19,7 +19,7 @@ Clash Meta / mihomo 的 DNS 接管关系。默认 `observe`：不自动改变劫
   劫持，让 mihomo 的上游继续经过 AGH。
 - **默认只观测**：`observe` 模式不摘取/恢复劫持，只采样与记录；注意 DNS 集成的漂移重打独立于此模式。
 - **切换方向不对称**：`attach`（恢复劫持）要求 AGH 进程与 5591 应答都正常；`detach`（摘除劫持）是恢复系统 DNS 的 **fail-open 救援方向**，AGH 不健康时仍会执行并记 RESCUE 事件。VPN 状态需连续两轮（约 3 分钟）稳定后才自动动作；切换模式本身不立即改变拓扑。
-- **DNS 集成可逆**：修改 Clash Meta 活动 profile 前自动备份，检测订阅更新导致的漂移并重打补丁，卸载时恢复原配置；开启/关闭后都需重开一次 VPN 才生效。
+- **DNS 集成可逆**：修改 Clash Meta 活动 profile 前自动备份，检测订阅更新导致的漂移并重打补丁，补丁包含 NS5591 与 `GEOIP,CN,DIRECT` 兜底规则，每次写入后自动广播 `PROFILE_CHANGED` 触发 mihomo 内存热重载；卸载时恢复原配置。
 - **KernelSU WebUI**：顶部常驻状态、快照时间、就近操作反馈、面板内确认、
   自动刷新和单飞任务锁。
 - **可观测**：状态机、事件日志、规则审计、过滤探针和 AGH querylog 统计。
@@ -74,7 +74,7 @@ su -c 'sh /data/adb/modules/rmg_netguard/service.sh'
    VPN** 使补丁生效。
 
 升级时直接刷入新 zip。升级会保留 `run/mode`、`run/integration`、事件日志和
-DNS 集成备份；卸载会停止 guard、还原模块持有的 profile 备份，并在必要时恢复
+DNS 集成备份（v2.3.0+：customize.sh 在安装时自动迁移旧 run/ 数据）；卸载会停止 guard、还原模块持有的 profile 备份，并在必要时恢复
 AGH 劫持。
 
 ## WebUI
@@ -187,7 +187,7 @@ verify_consistency.py  版本与关键说明一致性断言（CI 门禁）
 
 ## 版本
 
-当前主线版本：`v2.2.5`（`versionCode=27`）；最新 Release tag 为 `v2.2.1`
+当前主线版本：`v2.3.0`（`versionCode=28`）；最新 Release tag 为 `v2.2.1`
 （v2.2.2 / v2.2.3 / v2.2.5 已合入 `main`，尚未打 tag，见 CHANGELOG）。
 版本号使用 SemVer；`module.prop` 是唯一版本源，`build_zip.py`、`verify_zip.py`、
 WebUI 显示、README、Wiki 与 CHANGELOG 由 `verify_consistency.py` 统一校验，

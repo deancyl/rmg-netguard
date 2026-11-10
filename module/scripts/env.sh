@@ -1,5 +1,12 @@
 # RMG NetGuard shared environment - sourced by all scripts
 # Rules: busybox ash standalone mode; no bashisms; keep fork count minimal.
+# v2.3.0: prepend /data/adb/ksu/bin to PATH when it exists so that KernelSU
+# busybox (flock, nc -w, etc.) is preferred over system toybox in service.sh
+# and action.sh contexts. The prepend is idempotent (checked before adding).
+case ":$PATH:" in
+  *:/data/adb/ksu/bin:*) ;;
+  *) [ -d /data/adb/ksu/bin ] && export PATH="/data/adb/ksu/bin:$PATH" ;;
+esac
 
 # Callers derive MODDIR BEFORE sourcing this file (their $0 is the reliable
 # reference). Only fall back to self-derivation when caller did not provide
@@ -143,10 +150,14 @@ ports_check() {
 
 # end-to-end system-path DNS latency in ms (what apps actually feel).
 # 1 fork (curl). Optional $1 = curl max-time override (probe.sh uses 3).
+# v2.3.0: use -o /dev/null with --max-time and HEAD-only to avoid downloading
+# page body through tun0 (old -o /dev/null still fetched headers+body before
+# timing; now use --head to send HEAD request and only measure name lookup).
 # echoes integer ms, or "timeout" on failure.
 dns_latency_ms() {
   local v sec frac ms tmo="${1:-$CURL_TIMEOUT}"
-  v=$(curl -o /dev/null -s --max-time "$tmo" -w '%{time_namelookup}' "$CURL_TARGET" 2>/dev/null)
+  v=$(curl -s --head --max-time "$tmo" -w '%{time_namelookup}' -o /dev/null \
+      "http://www.baidu.com" 2>/dev/null)
   case "$v" in
     ''|*[!0-9.]*) echo timeout; return 1 ;;
   esac

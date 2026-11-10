@@ -1,22 +1,30 @@
 #!/system/bin/sh
-# RMG NetGuard v2.2.5 - DNS integration toggle for Clash Meta active profile.
+# RMG NetGuard v2.3.0 - DNS integration toggle for Clash Meta active profile.
 # Applies/reverts nameserver -> 127.0.0.1:5591 in the ACTIVE profile's
 # config.yaml so mihomo routes its upstream through AGH (track B filter).
+# Also injects - GEOIP,CN,DIRECT before - MATCH to ensure domestic traffic
+# with Fake-IP is not leaked to proxy in track B (cn-ip,no-resolve is skipped
+# for Fake-IPs; GEOIP,CN without no-resolve triggers real resolution via
+# direct-nameserver and correctly catches domestic hosts).
 #
-# apply  : backup once (never overwrite first backup), patch, record md5
-# revert : restore from first backup (user data wins)
+# apply  : backup once (never overwrite), patch NS+GEOIP, record md5,
+#          broadcast PROFILE_CHANGED so mihomo hot-reloads patched config
+# revert : restore from first backup, broadcast PROFILE_CHANGED
 # status : patched? backup? drifted? (profile changed since last apply)
-# auto   : re-apply ONLY when a patch we previously applied was lost
+# auto   : re-apply ONLY when a patch we previously applied was lost;
+#          after re-apply also broadcasts PROFILE_CHANGED
 #
-# Notes learned on-device (2026-10-15 / 2026-11-06):
+# Notes learned on-device (2026-10-15 / 2026-11-06 / 2026-11-10):
 # - CMFA override.json is SUPPRESSED by the profile's own dns: section, so
 #   patching the profile file is the only working hook.
 # - subscription updates rewrite the imported profile -> drift detection +
 #   auto-reapply is mandatory (WebUI "integration" toggle owns this).
 # - nameserver has TWO yaml shapes: inline array `nameserver: [ ... ]` and
-#   block list `nameserver:` + `- item` lines. v2.2.5 supports both; the old
-#   sed only matched the inline form and refused block-list profiles forever
-#   (FAIL: ambiguous nameserver lines (0) -> 27-retry storm on 2026-10-28).
+#   block list `nameserver:` + `- item` lines. v2.2.5+ supports both.
+# - v2.3.0: without in-memory hot-reload, disk patch is invisible to mihomo
+#   until VPN is reconnected. Broadcast PROFILE_CHANGED after every write.
+# - v2.3.0: GEOIP,CN,DIRECT (no no-resolve) must precede MATCH so domestic
+#   traffic with Fake-IP skips cn-ip(no-resolve) but still gets DIRECT.
 # - never sed -i: it breaks uid/SELinux context. Use truncate-rewrite.
 case "$0" in */*) MODDIR="${0%/*}" ;; *) MODDIR=. ;; esac
 MODDIR=$(cd "$MODDIR" 2>/dev/null && pwd) || MODDIR=""
@@ -44,7 +52,7 @@ marker_path() {
   echo "$BKDIR/${TARGET_UUID}.yaml.patched"
 }
 
-# Count the `nameserver:` key, accepting BOTH yaml shapes (v2.2.5).
+# Count the `nameserver:` key, accepting BOTH yaml shapes (v2.2.5+).
 # Deliberately does NOT match default-nameserver / direct-nameserver /
 # nameserver-policy / proxy-server-nameserver.
 ns_line_count() {
@@ -82,37 +90,98 @@ patch_nameserver() {
   ' "$TARGET_FILE"
 }
 
+# Inject `- GEOIP,CN,DIRECT` immediately before `- MATCH,...` if not already
+# present. Emits full file to stdout. Safe to call even when GEOIP line exists
+# (idempotent: skips injection when already present). Exits 2 on parse error.
+patch_geoip_rule() {
+  awk '
+    BEGIN { found_match = 0; found_geoip = 0; injected = 0 }
+    /^[[:space:]]*-[[:space:]]*GEOIP,CN,DIRECT/ { found_geoip = 1 }
+    /^[[:space:]]*-[[:space:]]*MATCH,/ {
+      found_match++
+      if (!found_geoip && !injected) {
+        match($0, /^[[:space:]]*/)
+        print substr($0, 1, RLENGTH) "- GEOIP,CN,DIRECT"
+        injected = 1
+      }
+    }
+    { print }
+    END { if (found_match == 0) exit 2 }
+  ' "$TARGET_FILE"
+}
+
+# Broadcast PROFILE_CHANGED to CMFA so mihomo hot-reloads patched config
+# from imported/[UUID]/config.yaml into memory immediately.
+# v2.3.0: without this, disk patch is invisible until user reconnects VPN.
+broadcast_reload() {
+  local uuid="${1:-$TARGET_UUID}"
+  [ -n "$uuid" ] || return 0
+  am broadcast \
+    -a com.github.metacubex.clash.meta.intent.action.PROFILE_CHANGED \
+    --es uuid "$uuid" \
+    -p com.github.metacubex.clash.meta \
+    >/dev/null 2>&1
+  log_event "INTEG" "broadcast PROFILE_CHANGED -> CMFA hot-reload ($uuid)"
+}
+
 do_apply() {
   target_file || { echo "FAIL: no readable active Meta profile"; return 1; }
-  if grep -q "$NS5591" "$TARGET_FILE" 2>/dev/null; then
-    md5sum "$TARGET_FILE" | cut -d' ' -f1 > "$(marker_path)" 2>/dev/null
-    echo "OK: already patched ($TARGET_UUID)"
-    return 0
-  fi
-  n=$(ns_line_count)
-  [ "$n" = "1" ] || { echo "FAIL: ambiguous nameserver lines ($n), refusing"; return 1; }
-  ORIG="$(backup_path)"
-  if [ ! -f "$ORIG" ]; then
-    cp -a "$TARGET_FILE" "$ORIG" || { echo "FAIL: backup failed"; return 1; }
-    log_event "INTEG" "backup saved: $ORIG"
-  fi
-  # patch via generated content + truncate-rewrite (preserves inode, uid,
-  # SELinux context). v2.2.5: handles inline-array AND block-list shapes.
-  if ! patch_nameserver > "$RUN/.integ.tmp" 2>/dev/null; then
+
+  # --- nameserver patch ---
+  already_ns=0
+  grep -q "$NS5591" "$TARGET_FILE" 2>/dev/null && already_ns=1
+
+  if [ "$already_ns" = "0" ]; then
+    n=$(ns_line_count)
+    [ "$n" = "1" ] || { echo "FAIL: ambiguous nameserver lines ($n), refusing"; return 1; }
+    ORIG="$(backup_path)"
+    if [ ! -f "$ORIG" ]; then
+      cp -a "$TARGET_FILE" "$ORIG" || { echo "FAIL: backup failed"; return 1; }
+      log_event "INTEG" "backup saved: $ORIG"
+    fi
+    if ! patch_nameserver > "$RUN/.integ.tmp" 2>/dev/null; then
+      rm -f "$RUN/.integ.tmp"
+      echo "FAIL: patch generation failed (unsupported nameserver layout)"
+      return 1
+    fi
+    if ! grep -q "$NS5591" "$RUN/.integ.tmp"; then
+      rm -f "$RUN/.integ.tmp"
+      echo "FAIL: NS patch did not take effect"
+      return 1
+    fi
+    cat "$RUN/.integ.tmp" > "$TARGET_FILE"
     rm -f "$RUN/.integ.tmp"
-    echo "FAIL: patch generation failed (unsupported nameserver layout)"
-    return 1
+    log_event "INTEG" "applied NS5591 to $TARGET_UUID"
+  else
+    # Already patched for NS; ensure backup exists
+    ORIG="$(backup_path)"
+    if [ ! -f "$ORIG" ]; then
+      cp -a "$TARGET_FILE" "$ORIG" || { echo "FAIL: backup failed"; return 1; }
+      log_event "INTEG" "backup saved (NS already patched): $ORIG"
+    fi
   fi
-  if ! grep -q "$NS5591" "$RUN/.integ.tmp"; then
-    rm -f "$RUN/.integ.tmp"
-    echo "FAIL: patch did not take effect"
-    return 1
+
+  # --- GEOIP,CN,DIRECT rule patch (v2.3.0) ---
+  already_geoip=0
+  grep -qE '^[[:space:]]*-[[:space:]]*GEOIP,CN,DIRECT' "$TARGET_FILE" 2>/dev/null && already_geoip=1
+
+  if [ "$already_geoip" = "0" ]; then
+    if ! patch_geoip_rule > "$RUN/.geoip.tmp" 2>/dev/null; then
+      rm -f "$RUN/.geoip.tmp"
+      log_event "INTEG" "WARN: no MATCH rule found, skipping GEOIP injection"
+    else
+      cat "$RUN/.geoip.tmp" > "$TARGET_FILE"
+      rm -f "$RUN/.geoip.tmp"
+      log_event "INTEG" "injected GEOIP,CN,DIRECT before MATCH ($TARGET_UUID)"
+    fi
   fi
-  cat "$RUN/.integ.tmp" > "$TARGET_FILE"
-  rm -f "$RUN/.integ.tmp"
+
   md5sum "$TARGET_FILE" | cut -d' ' -f1 > "$(marker_path)" 2>/dev/null
-  log_event "INTEG" "applied NS5591 to $TARGET_UUID (profile patched)"
+  log_event "INTEG" "apply complete ($TARGET_UUID): NS5591+GEOIP patched"
   echo "OK: patched $TARGET_UUID"
+
+  # hot-reload CMFA memory config (v2.3.0)
+  broadcast_reload "$TARGET_UUID"
   return 0
 }
 
@@ -131,6 +200,9 @@ do_revert() {
   rm -f "$(marker_path)" 2>/dev/null
   log_event "INTEG" "reverted $TARGET_UUID from backup"
   echo "OK: reverted $TARGET_UUID"
+
+  # hot-reload CMFA so mihomo immediately runs the reverted config (v2.3.0)
+  broadcast_reload "$TARGET_UUID"
   return 0
 }
 
@@ -140,6 +212,8 @@ do_status() {
   ORIG="$(backup_path)"
   MARK="$(marker_path)"
   b="no"; [ -f "$ORIG" ] && b="yes"
+  geoip="no"
+  grep -qE '^[[:space:]]*-[[:space:]]*GEOIP,CN,DIRECT' "$TARGET_FILE" 2>/dev/null && geoip="yes"
   drift="no"
   if [ -f "$MARK" ] && [ -f "$TARGET_FILE" ]; then
     cur=$(md5sum "$TARGET_FILE" | cut -d' ' -f1)
@@ -147,7 +221,7 @@ do_status() {
     [ "$cur" = "$want" ] || drift="yes"
   fi
   echo "profile: $TARGET_UUID"
-  echo "patched: $st backup: $b drifted: $drift"
+  echo "patched: $st geoip: $geoip backup: $b drifted: $drift"
 }
 
 do_auto() {
@@ -156,6 +230,7 @@ do_auto() {
   # 2026-10-28, and would silently overwrite a user's deliberate config
   # (e.g. domestic DoH) while the flag happens to be "on".
   # First-time patching is exclusively the WebUI "开启 DNS 集成" action.
+  # v2.3.0: also check GEOIP rule; broadcast PROFILE_CHANGED after re-apply.
   [ "$(integ_get)" = "on" ] || return 0
   target_file || return 0
   MARK="$(marker_path)"
@@ -168,9 +243,10 @@ do_auto() {
     cur=$(md5sum "$TARGET_FILE" | cut -d' ' -f1)
     want=$(cat "$MARK" 2>/dev/null)
     if [ "$cur" != "$want" ]; then
-      # content changed but still patched (e.g. subscription update) -> refresh marker
-      md5sum "$TARGET_FILE" | cut -d' ' -f1 > "$MARK" 2>/dev/null
-      log_event "INTEG" "marker refreshed after profile change ($TARGET_UUID)"
+      # Content changed but NS still patched (e.g. subscription update may
+      # have wiped GEOIP rule) -> re-run apply to restore GEOIP and refresh marker
+      log_event "INTEG" "content drifted after subscription update, re-patching GEOIP+marker"
+      do_apply >/dev/null 2>&1
     fi
   fi
   return 0
