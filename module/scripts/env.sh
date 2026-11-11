@@ -1,11 +1,14 @@
 # RMG NetGuard shared environment - sourced by all scripts
 # Rules: busybox ash standalone mode; no bashisms; keep fork count minimal.
-# v2.3.0: prepend /data/adb/ksu/bin to PATH when it exists so that KernelSU
-# busybox (flock, nc -w, etc.) is preferred over system toybox in service.sh
-# and action.sh contexts. The prepend is idempotent (checked before adding).
+# v2.3.1: APPEND /data/adb/ksu/bin to PATH (not prepend) so KernelSU busybox
+# is a fallback, not an override. BusyBox nc closes UDP socket immediately on
+# stdin EOF without waiting for the reply, breaking probe_dns / filter_probe.
+# System toybox /system/bin/nc honours -w 1 correctly. By appending ksu/bin,
+# probe functions can call /system/bin/nc explicitly while flock etc. still
+# resolve to busybox when toybox lacks them.
 case ":$PATH:" in
   *:/data/adb/ksu/bin:*) ;;
-  *) [ -d /data/adb/ksu/bin ] && export PATH="/data/adb/ksu/bin:$PATH" ;;
+  *) [ -d /data/adb/ksu/bin ] && export PATH="$PATH:/data/adb/ksu/bin" ;;
 esac
 
 # Callers derive MODDIR BEFORE sourcing this file (their $0 is the reliable
@@ -188,11 +191,15 @@ dns_latency_batch() {
 
 # DNS liveness probe against a local resolver over UDP (liveness only;
 # mksh 32-bit arithmetic forbids ns timing here).
+# v2.3.1: explicitly use /system/bin/nc (toybox) which honours -w 1 timeout
+# and waits for the UDP reply. BusyBox nc (in /data/adb/ksu/bin/) closes the
+# socket immediately on stdin EOF and returns empty, causing silent failures.
 probe_dns() {
-  local out expect
+  local out expect _nc
+  _nc=/system/bin/nc; [ -x "$_nc" ] || _nc=nc
   expect=$(printf '\001\002')
   out=$(printf '\001\002\001\000\000\001\000\000\000\000\000\000\001a\002cn\000\000\001\000\001' \
-        | timeout 2 nc -u -w 1 127.0.0.1 "$1" 2>/dev/null | head -c 2)
+        | timeout 2 "$_nc" -u -w 1 127.0.0.1 "$1" 2>/dev/null | head -c 2)
   [ "$out" = "$expect" ]
 }
 
@@ -202,10 +209,13 @@ probe_dns() {
 # echoes: BLOCKED | OPEN | UNKNOWN
 # Parameterized core: $1 = printf query string (raw DNS A-query bytes).
 # v2.1: ceiling FILTER_PROBE_TMO (default 2s, was fixed 3s + -w 2).
+# v2.3.1: explicitly use /system/bin/nc (toybox) for the same reason as
+# probe_dns: BusyBox nc returns empty on UDP probes (closes on stdin EOF).
 filter_probe_domain() {
-  local hex rcode ancount
+  local hex rcode ancount _nc
+  _nc=/system/bin/nc; [ -x "$_nc" ] || _nc=nc
   hex=$(printf "$1" \
-        | timeout "$FILTER_PROBE_TMO" nc -u -w 1 127.0.0.1 "$AGH_PORT" 2>/dev/null \
+        | timeout "$FILTER_PROBE_TMO" "$_nc" -u -w 1 127.0.0.1 "$AGH_PORT" 2>/dev/null \
         | od -An -v -tx1 | tr -d ' \n')
   [ -n "$hex" ] || { echo UNKNOWN; return; }
   rcode=$(echo "$hex" | cut -c7-8)          # flags low byte

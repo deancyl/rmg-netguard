@@ -134,10 +134,17 @@ REQUIRED = {
     "wiki/开发与验证.md": ["唯一版本源", "verify_consistency.py"],
     "module/scripts/webui.sh": ["version=", "最近 50 行"],
     "module/scripts/config_toggle.sh": ["patch_nameserver()", "block list", "[ -f \"$MARK\" ] || return 0",
-                                        "patch_geoip_rule()", "broadcast_reload()", "PROFILE_CHANGED"],
-    "module/scripts/rules_audit.sh": ["RULE-SET,(cn|cn-ip|china)", "有 RULE-SET/GEOSITE 国内直连覆盖"],
+                                        "patch_geoip_rule()", "broadcast_reload()", "PROFILE_CHANGED",
+                                        "agh_upstream_needs_fix()", "AGH_UNSAFE_PATTERN", "do_agh_guard()",
+                                        "agh_guard) do_agh_guard"],
+    "module/scripts/rules_audit.sh": ["RULE-SET,(cn|cn-ip|china)",
+                                   "1\\.12\\.12\\.12",
+                                   "APNIC Anycast",
+                                   "域名形态DoH"],
     "tests/test_config_toggle.sh": ["block-list", "auto: no marker", "re-apply",
-                                    "GEOIP injected", "geoip_idempotent", "auto: geoip drift"],
+                                    "GEOIP injected", "geoip_idempotent", "auto: geoip drift", "agh_guard", "1.12.12.12"],    "module/uninstall.sh": ["AdGuardHome.yaml.orig", "AGH_ORIG",
+                               "AGH_YAML"],
+
 }
 
 for rel, needles in FORBIDDEN.items():

@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# RMG NetGuard v2.3.0 - DNS integration toggle for Clash Meta active profile.
+# RMG NetGuard v2.3.1 - DNS integration toggle for Clash Meta active profile.
 # Applies/reverts nameserver -> 127.0.0.1:5591 in the ACTIVE profile's
 # config.yaml so mihomo routes its upstream through AGH (track B filter).
 # Also injects - GEOIP,CN,DIRECT before - MATCH to ensure domestic traffic
@@ -252,11 +252,82 @@ do_auto() {
   return 0
 }
 
+# ---- AGH upstream drift guard (v2.3.1) ----
+# Enforces safe upstream DNS in AdGuardHome.yaml: removes 1.12.12.12,
+# 1.1.1.1, 8.8.8.8 and rewrites upstream_dns/fallback_dns/bootstrap_dns to
+# pure-IP CNdoH entries. Called by guard.sh every cycle and manually via
+# config_toggle.sh agh_guard.
+# SAFETY: always verifies PID cmdline before SIGHUP; never overwrites the
+# first backup (AdGuardHome.yaml.orig) so uninstall.sh can restore it.
+AGH_YAML="${AGH_DIR}/bin/AdGuardHome.yaml"
+AGH_UNSAFE_PATTERN='1\.12\.12\.12|1\.1\.1\.1|8\.8\.8\.8'
+
+agh_upstream_needs_fix() {
+  [ -r "$AGH_YAML" ] || return 1
+  grep -qE "$AGH_UNSAFE_PATTERN" "$AGH_YAML" 2>/dev/null
+}
+
+do_agh_guard() {
+  [ -r "$AGH_YAML" ] || return 0
+  agh_upstream_needs_fix || { echo "OK: AGH upstream already safe"; return 0; }
+  # First backup only: never overwrite the original
+  BKFILE="$BKDIR/AdGuardHome.yaml.orig"
+  if [ ! -f "$BKFILE" ]; then
+    mkdir -p "$BKDIR" 2>/dev/null
+    cp -a "$AGH_YAML" "$BKFILE" || { log_event "AGH_GUARD" "FAIL: backup failed"; return 1; }
+    log_event "AGH_GUARD" "AGH yaml first backup saved: $BKFILE"
+  fi
+  TMP="$RUN/.agh_yaml.$$"
+  awk '
+    /^  upstream_dns:/ {
+      print "  upstream_dns:"
+      print "    - https://223.5.5.5/dns-query"
+      print "    - https://223.6.6.6/dns-query"
+      skip=1; next
+    }
+    /^  fallback_dns:/ {
+      print "  fallback_dns:"
+      print "    - https://119.29.29.29/dns-query"
+      skip=2; next
+    }
+    /^  bootstrap_dns:/ {
+      print "  bootstrap_dns:"
+      print "    - 119.29.29.29"
+      print "    - 223.5.5.5"
+      print "    - 223.6.6.6"
+      skip=3; next
+    }
+    skip>0 && /^    - / { next }
+    skip>0 && !/^    / { skip=0 }
+    { print }
+  ' "$AGH_YAML" > "$TMP" || { rm -f "$TMP"; log_event "AGH_GUARD" "FAIL: awk rewrite failed"; return 1; }
+  # Sanity: new file must have safe upstream and must NOT contain unsafe entries
+  if ! grep -q '223.5.5.5' "$TMP" || grep -qE "$AGH_UNSAFE_PATTERN" "$TMP"; then
+    rm -f "$TMP"; log_event "AGH_GUARD" "FAIL: generated yaml invalid or still unsafe"; return 1
+  fi
+  cat "$TMP" > "$AGH_YAML"; rm -f "$TMP"
+  log_event "AGH_GUARD" "AGH upstream auto-corrected (removed unsafe entries)"
+  # SIGHUP to live AGH process (anti-brick: verify cmdline first)
+  local pid cmd
+  pid=$(pidof AdGuardHome 2>/dev/null)
+  if [ -n "$pid" ]; then
+    cmd=$(cat /proc/$pid/cmdline 2>/dev/null | tr '\0' ' ')
+    case "$cmd" in
+      *AdGuardHome*)
+        kill -HUP "$pid" 2>/dev/null
+        log_event "AGH_GUARD" "SIGHUP sent to AGH pid=$pid"
+        ;;
+    esac
+  fi
+  echo "OK: AGH upstream corrected"
+}
+
 case "$1" in
-  apply) do_apply; exit $? ;;
-  revert) do_revert; exit $? ;;
-  status) do_status ;;
-  auto) do_auto; exit $? ;;
-  *) echo "Usage: config_toggle.sh {apply|revert|status|auto}"; exit 1 ;;
+  apply)     do_apply; exit $? ;;
+  revert)    do_revert; exit $? ;;
+  status)    do_status ;;
+  auto)      do_auto; exit $? ;;
+  agh_guard) do_agh_guard; exit $? ;;
+  *) echo "Usage: config_toggle.sh {apply|revert|status|auto|agh_guard}"; exit 1 ;;
 esac
 exit 0

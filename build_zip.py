@@ -39,6 +39,8 @@ def main():
     files = []
     for root, dirs, names in os.walk(SRC):
         dirs.sort()
+        # Exclude runtime state directories (run/ is created on device, not shipped)
+        dirs[:] = [d for d in dirs if d != "run"]
         for n in sorted(names):
             # Never ship editor/backup leftovers (e.g. *.bak-v2.1.0) into a
             # module zip: KernelSU installs everything at the zip root.

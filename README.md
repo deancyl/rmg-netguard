@@ -74,7 +74,7 @@ su -c 'sh /data/adb/modules/rmg_netguard/service.sh'
    VPN** 使补丁生效。
 
 升级时直接刷入新 zip。升级会保留 `run/mode`、`run/integration`、事件日志和
-DNS 集成备份（v2.3.0+：customize.sh 在安装时自动迁移旧 run/ 数据）；卸载会停止 guard、还原模块持有的 profile 备份，并在必要时恢复
+DNS 集成备份（v2.3.1+：customize.sh 在安装时自动迁移旧 run/ 数据）；卸载会停止 guard、还原模块持有的 profile 备份，并在必要时恢复
 AGH 劫持。
 
 ## WebUI
@@ -187,7 +187,7 @@ verify_consistency.py  版本与关键说明一致性断言（CI 门禁）
 
 ## 版本
 
-当前主线版本：`v2.3.0`（`versionCode=28`）；最新 Release tag 为 `v2.2.1`
+当前主线版本：`v2.3.1`（`versionCode=29`）；最新 Release tag 为 `v2.2.1`
 （v2.2.2 / v2.2.3 / v2.2.5 已合入 `main`，尚未打 tag，见 CHANGELOG）。
 版本号使用 SemVer；`module.prop` 是唯一版本源，`build_zip.py`、`verify_zip.py`、
 WebUI 显示、README、Wiki 与 CHANGELOG 由 `verify_consistency.py` 统一校验，

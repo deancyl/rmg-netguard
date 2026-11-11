@@ -6,6 +6,9 @@
 # GEOIP,CN,DIRECT injection before MATCH, and status output format.
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
+
+# Portable md5: use md5sum on Linux/Android, md5 -q on macOS
+_md5() { md5sum "$1" 2>/dev/null | cut -d' ' -f1 || md5 -q "$1" 2>/dev/null; }
 T="$(TMPDIR=/tmp mktemp -d)"
 
 inline='dns:
@@ -113,9 +116,9 @@ setup auto_geoip_drift block
 echo on > "$ROOT/mod/run/integration"
 $CT apply >/dev/null 2>&1
 # simulate subscription update that kept NS but wiped GEOIP line
+# (CMFA rewrites the config file but does NOT touch our marker file,
+# so marker still holds hash(patched_with_geoip) != hash(now_no_geoip) -> drift)
 grep -v 'GEOIP,CN,DIRECT' "$CFG" > "$CFG.tmp" && mv "$CFG.tmp" "$CFG"
-# update marker to simulate what CMFA subscription update leaves behind
-md5sum "$CFG" | cut -d' ' -f1 > "$ROOT/mod/run/backups/abcd.yaml.patched"
 $CT auto >/dev/null 2>&1
 chk "auto: geoip drift => re-inject GEOIP" "grep -qE 'GEOIP,CN,DIRECT' '$CFG'"
 
@@ -123,6 +126,36 @@ chk "auto: geoip drift => re-inject GEOIP" "grep -qE 'GEOIP,CN,DIRECT' '$CFG'"
 AUD_SRC="$HERE/module/scripts/rules_audit.sh"
 chk "audit: recognises RULE-SET,cn as equivalent coverage" "grep -q 'RULE-SET,(cn|cn-ip|china)' \"$AUD_SRC\""
 chk "audit: RULE-SET profiles emit INFO not WARN" "grep -q '有 RULE-SET/GEOSITE 国内直连覆盖' \"$AUD_SRC\""
+
+# agh_guard subcommand (v2.3.1): detects and auto-corrects unsafe AGH upstream
+# config_toggle.sh derives MODDIR from $0 (its own path), so we copy the
+# module/scripts directory into a temp dir so MODDIR resolves to that temp dir.
+T_AGH="$T/agh_guard"
+mkdir -p "$T_AGH/agh/bin" "$T_AGH/run/backups" "$T_AGH/scripts"
+# Copy all scripts so env.sh MODDIR self-check passes with $T_AGH as MODDIR
+cp "$HERE/module/scripts/env.sh"          "$T_AGH/scripts/env.sh"
+cp "$HERE/module/scripts/config_toggle.sh" "$T_AGH/scripts/config_toggle.sh"
+cat > "$T_AGH/agh/bin/AdGuardHome.yaml" << 'YAMLEOF'
+dns:
+  upstream_dns:
+    - https://1.12.12.12/dns-query
+    - https://1.1.1.1/dns-query
+    - https://doh.pub/dns-query
+  fallback_dns:
+    - https://8.8.8.8/dns-query
+  bootstrap_dns:
+    - 8.8.8.8
+    - 1.1.1.1
+YAMLEOF
+# Call via copied script so $0-derived MODDIR == $T_AGH, RUN=$T_AGH/run, BKDIR=$T_AGH/run/backups
+out=$(AGH_DIR="$T_AGH/agh" sh "$T_AGH/scripts/config_toggle.sh" agh_guard 2>&1) || true
+chk "agh_guard: 1.12.12.12 removed" "! grep -q '1\.12\.12\.12' \"$T_AGH/agh/bin/AdGuardHome.yaml\""
+chk "agh_guard: 1.1.1.1 removed"    "! grep -q '1\.1\.1\.1'    \"$T_AGH/agh/bin/AdGuardHome.yaml\""
+chk "agh_guard: 8.8.8.8 removed"    "! grep -q '8\.8\.8\.8'    \"$T_AGH/agh/bin/AdGuardHome.yaml\""
+chk "agh_guard: 223.5.5.5 written"  "grep  -q '223\.5\.5\.5'   \"$T_AGH/agh/bin/AdGuardHome.yaml\""
+chk "agh_guard: backup created"     "[ -f \"$T_AGH/run/backups/AdGuardHome.yaml.orig\" ]"
+out2=$(AGH_DIR="$T_AGH/agh" sh "$T_AGH/scripts/config_toggle.sh" agh_guard 2>&1) || true
+chk "agh_guard: idempotent (already safe)" "echo \"$out2\" | grep -q 'already safe'"
 
 echo "---- result: pass=$pass fail=$fail (temp: $T)"
 [ "$fail" = 0 ]

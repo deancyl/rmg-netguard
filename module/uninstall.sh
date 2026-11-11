@@ -45,5 +45,23 @@ if [ -f "$RUN/rescue.removed" ]; then
   fi
 fi
 
+# 4. restore AGH upstream yaml if agh_guard modified it (AdGuardHome.yaml.orig)
+AGH_YAML="/data/adb/agh/bin/AdGuardHome.yaml"
+AGH_ORIG="$BKDIR/AdGuardHome.yaml.orig"
+if [ -f "$AGH_ORIG" ] && [ -f "$AGH_YAML" ]; then
+  cat "$AGH_ORIG" > "$AGH_YAML" \
+    && echo "NetGuard: restored AGH upstream yaml from backup $AGH_ORIG" >&2
+  pid=$(pidof AdGuardHome 2>/dev/null)
+  if [ -n "$pid" ]; then
+    cmd=$(cat /proc/$pid/cmdline 2>/dev/null | tr '\0' ' ')
+    case "$cmd" in
+      *AdGuardHome*)
+        kill -HUP "$pid" 2>/dev/null
+        echo "NetGuard: SIGHUP sent to AGH pid=$pid after yaml restore" >&2
+        ;;
+    esac
+  fi
+fi
+
 rm -rf "$RUN" 2>/dev/null
 exit 0

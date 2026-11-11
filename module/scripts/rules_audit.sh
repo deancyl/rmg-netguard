@@ -101,8 +101,21 @@ else
   echo "INFO  /data/adb/agh 不可读"
 fi
 if [ -r "$AGH_DIR/bin/AdGuardHome.yaml" ]; then
-  if grep -q -E 'https://(1\.1\.1\.1|8\.8\.8\.8)' "$AGH_DIR/bin/AdGuardHome.yaml" 2>/dev/null; then
-    echo "WARN  AGH fallback 上游含境外 DoH(1.1.1.1/8.8.8.8) -> 劫持开启时该流量必经 TUN/代理, 劣化即 10-30s 级挂起(10-13 实证)"
+  _yaml="$AGH_DIR/bin/AdGuardHome.yaml"
+  # Check for foreign DoH servers (1.1.1.1, 8.8.8.8)
+  if grep -qE 'https://(1\.1\.1\.1|8\.8\.8\.8)' "$_yaml" 2>/dev/null; then
+    echo "WARN  AGH upstream含境外DoH(1.1.1.1/8.8.8.8)->劫持开启时经TUN/代理,10-30s级挂起(2026-10-13实证)"
+    W=$(( W + 1 ))
+  fi
+  # Check for 1.12.12.12 (APNIC Anycast, misses cn-ip,no-resolve in track B -> MATCH走代理)
+  if grep -q '1\.12\.12\.12' "$_yaml" 2>/dev/null; then
+    echo "WARN  AGH upstream含1.12.12.12(APNIC Anycast)->Fake-IP轨道B下cn-ip,no-resolve跳过->落入MATCH走代理(2026-11-10实证:tun0 944MB)"
+    W=$(( W + 1 ))
+  fi
+  # Check for domain-form DoH (triggers UDP/53 bootstrap -> enters tun0 -> hijack回环风险)
+  # Safe: pure-IP DoH (https://223.5.5.5/...) is fine; domain-form is risky.
+  if grep -qE '^[[:space:]]+-[[:space:]]+https://[a-zA-Z]' "$_yaml" 2>/dev/null; then
+    echo "WARN  AGH upstream含域名形态DoH(如doh.pub)->需bootstrap UDP/53->进tun0被0.0.0.0:53劫持->AGH/mihomo DNS回环风险(2026-11-10实证)"
     W=$(( W + 1 ))
   fi
 fi

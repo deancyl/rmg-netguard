@@ -2,6 +2,41 @@
 
 本项目使用语义化版本。发布记录以 GitHub Releases 为准；标注「主线提交」的版本已合入 `main` 并部署到验证设备，但未创建 Release tag。
 
+## v2.3.1 - 2026-11-11（主线提交）
+
+### 修复：BusyBox nc 探针回归（probe_dns / filter_probe 静默失败）
+
+**根因**：v2.3.0 将 `/data/adb/ksu/bin` 置于 PATH 开头，导致 `probe_dns()` 和
+`filter_probe_domain()` 实际调用 BusyBox `nc`。BusyBox nc 在管道 stdin EOF 后
+立即关闭 socket 返回，不等待 UDP 回包，造成探针始终返回空输出。
+
+**后果**：
+- `health_gate` 判定 "AGH not answering on 5591"，永久阻塞 `controller.sh attach`
+- `filter_probe` 始终输出 `UNKNOWN`，WebUI 过滤状态误显示为未知
+- 实际上 AGH 5591 一直在线，仅探针侧工具出错
+
+**修复（env.sh，v2.3.1）**：
+- PATH 由开头预插改为末尾追加（ksu/bin 降为兜底，不再覆盖系统 toybox）
+- `probe_dns()` 和 `filter_probe_domain()` 显式调用 `/system/bin/nc`（toybox），
+  回退到裸 `nc` 仅当 `/system/bin/nc` 不可执行时
+
+### 修复：AGH upstream 防漂移看门狗
+
+**背景**：v2.3.0 人工移除了 `1.12.12.12`，但 AGH 模块升级后 `AdGuardHome.yaml`
+会被重写，危险条目可能回流。
+
+**变更**：
+- **`rules_audit.sh`**：新增对 `1.12.12.12`（APNIC Anycast）和域名形 DoH
+  （如 `doh.pub`）的 WARN 告警，与已有的 `1.1.1.1/8.8.8.8` 检查并列
+- **`config_toggle.sh`** 新增 `agh_guard` 子命令（`do_agh_guard()`）：
+  - 检测 yaml 中 `1.12.12.12/1.1.1.1/8.8.8.8` 存在性
+  - 自动重写 `upstream_dns/fallback_dns/bootstrap_dns` 为纯 IP CNDoH
+  - 首次修改前 `cp -a` 保存 `AdGuardHome.yaml.orig` 备份（不覆盖已存在备份）
+  - 验证新 yaml 合法后 `cat > target`；仅在 PID cmdline 确认 `AdGuardHome` 时发 SIGHUP
+- **`guard.sh`**：每 10 轮调用 `config_toggle.sh agh_guard`，实现周期性防漂移
+- **`uninstall.sh`**：卸载时若存在 `AdGuardHome.yaml.orig` 则恢复原始 yaml，
+  并向存活 AGH 进程发 SIGHUP
+
 ## v2.3.0 - 2026-11-10（主线提交）
 
 ### 修复：代理节点流量异常增加（取证确认的三条根因）
