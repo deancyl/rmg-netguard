@@ -187,7 +187,7 @@ verify_consistency.py  版本与关键说明一致性断言（CI 门禁）
 
 ## 版本
 
-当前主线版本：`v2.3.1`（`versionCode=29`）；最新 Release tag 为 `v2.2.1`
+当前主线版本：`v2.3.2`（`versionCode=30`）；最新 Release tag 为 `v2.2.1`
 （v2.2.2 / v2.2.3 / v2.2.5 已合入 `main`，尚未打 tag，见 CHANGELOG）。
 版本号使用 SemVer；`module.prop` 是唯一版本源，`build_zip.py`、`verify_zip.py`、
 WebUI 显示、README、Wiki 与 CHANGELOG 由 `verify_consistency.py` 统一校验，

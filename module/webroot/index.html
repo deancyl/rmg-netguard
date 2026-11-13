@@ -79,7 +79,7 @@
   </div>
 
   <div class="wrap">
-    <h1>RMG NetGuard <span style="font-size:12px;color:#7d8792" id="ui_ver">v2.3.1</span></h1>
+    <h1>RMG NetGuard <span style="font-size:12px;color:#7d8792" id="ui_ver">v2.3.2</span></h1>
     <div class="sub">DNS / VPN 双轨守护 · 默认只看不动 · 切换可逆 · 救援方向不设健康门</div>
 
     <div class="hint" style="margin:-6px 0 12px">后台常规每 90 秒采样一次（无 AGH / Clash 空载时 300 秒）；此处显示最近一次快照，右上角为距今时间。页面每 30 秒只是重读快照，不是重新采样。</div>
@@ -107,10 +107,11 @@
       </div>
       <div class="kv"><span>当前模式</span><b id="st_mode2">--</b></div>
       <div class="kv"><span>集成状态</span><b id="st_integ">--</b></div>
+      <div class="kv"><span>AGH 上游状态</span><b id="st_agh_up">--</b></div>
       <div class="kv"><span>过滤探针</span><b id="st_probe">未检测</b></div>
       <div class="kv"><span>AGH 日志年龄</span><b id="st_qage">--</b></div>
       <div id="st_env" style="margin-top:6px"></div>
-      <div class="hint">只看不动（observe）= 不自动摘除或恢复劫持，只采样与记录；但 DNS 集成一旦开启，其备份、订阅漂移重打与还原会独立运行（不受模式影响），且采样本身会产生少量测试流量。自动切换（auto）= VPN 状态连续 2 轮（约 3 分钟）稳定后才摘除/恢复劫持；切换模式本身不会立即改变当前轨道，需要立即生效请手动摘除/恢复。恢复劫持（attach）前强制检查 AGH 存活与 5591 应答；摘除劫持（detach）是恢复系统 DNS 的救援方向，AGH 不健康时仍会执行（fail-open），并在事件日志记录 RESCUE。DNS 集成 = 备份并把 Clash Meta 活动配置的上游指向 AGH，开启/关闭后都需重开一次 VPN 才生效，可一键还原。AGH 未运行时探针即时跳过；AGH 与 Clash 均未安装时模块进入 300 秒退避空载。</div>
+      <div class="hint">只看不动（observe）= 不自动摘除或恢复劫持，只采样与记录；但 DNS 集成一旦开启，其备份、订阅漂移重打与还原会独立运行（不受模式影响），且采样本身会产生少量测试流量。自动切换（auto）= VPN 状态连续 2 轮（约 3 分钟）稳定后才摘除/恢复劫持；切换模式本身不会立即改变当前轨道，需要立即生效请手动摘除/恢复。恢复劫持（attach）前强制检查 AGH 存活与 5591 应答；摘除劫持（detach）是恢复系统 DNS 的救援方向，AGH 不健康时仍会执行（fail-open），并在事件日志记录 RESCUE。DNS 集成 = 备份并把 Clash Meta 活动配置的上游指向 AGH，已写入 NS5591 + GEOIP,CN,DIRECT 并自动广播触发 Clash Meta 热重载（若个别客户端版本未响应广播，重开一次 Clash Meta VPN 即可生效），可一键还原。AGH 未运行时探针即时跳过；AGH 与 Clash 均未安装时模块进入 300 秒退避空载。</div>
     </div>
 
     <div class="hint" style="margin:0 0 6px">以下 5 项为只读诊断（一键体检约 3–8 秒，会产生少量测试 DNS / HTTP 流量）：</div>
@@ -295,9 +296,9 @@
       if (!failed && (sub === 'mode_auto' || sub === 'mode_observe')) {
         extra = '\n模式已切换；拓扑将在约 3 分钟（2 轮 × 90 秒）内自动调整，切换本身不会立即改变当前轨道。需立即生效请手动摘除/恢复劫持。';
       } else if (!failed && sub === 'integ_on') {
-        extra = '\n补丁已写入活动配置；需重开一次 Clash Meta VPN 才会生效。';
+        extra = '\n已写入 NS5591 + GEOIP,CN,DIRECT 并自动广播触发 Clash Meta 热重载（若个别客户端版本未响应广播，重开一次 Clash Meta VPN 即可生效）。';
       } else if (!failed && sub === 'integ_off') {
-        extra = '\n已从备份还原活动配置；需重开一次 Clash Meta VPN 才会生效。';
+        extra = '\n已从备份还原活动配置并自动广播触发 Clash Meta 热重载（若个别客户端版本未响应广播，重开一次 Clash Meta VPN 即可生效）。';
       } else if (!failed && sub === 'detach') {
         extra = (first.indexOf('already') >= 0)
           ? '\n当前已处于摘除状态，无需改动。'
@@ -428,6 +429,10 @@
     var fp = /filter_probe=(\w+)/.exec(rest);
     var fw = /filter_probe_wedge=(\w+)/.exec(rest);
     var qa = /querylog_age=(-?\d+)/.exec(rest);
+    var geo = /geoip:\s*(\w+)/.exec(rest);
+    var bkp = /backup:\s*(\w+)/.exec(rest);
+    var drf = /drifted:\s*(\w+)/.exec(rest);
+    var aghUp = /agh_upstream:\s*(\w+)/.exec(rest);
     document.getElementById('st_mode2').textContent = mode2 ? (mode2[1] === 'auto' ? '自动切换' : '只看不动') : '--';
 
     if (integ) {
@@ -436,14 +441,38 @@
       // flag file is only a fallback (it can drift if config_toggle was
       // invoked directly rather than through webui.sh integ_on/off).
       lastInteg = patched ? true : (integ[1] === 'on');
-      document.getElementById('st_integ').innerHTML =
-        '<span class="badge ' + (lastInteg ? (patched ? 'ok' : 'warn') : 'mut') + '">' +
+      var integHtml = '<span class="badge ' + (lastInteg ? (patched ? 'ok' : 'warn') : 'mut') + '">' +
         (lastInteg ? (patched ? '已开启·已打补丁' : '已开启·未打补丁') : '关闭') + '</span>';
+      if (lastInteg || (bkp && bkp[1] === 'yes')) {
+        if (geo && geo[1] === 'yes') {
+          integHtml += ' <span class="badge ok">GEOIP兜底</span>';
+        } else if (lastInteg && geo && geo[1] === 'no') {
+          integHtml += ' <span class="badge warn">缺GEOIP</span>';
+        }
+        if (bkp && bkp[1] === 'yes') {
+          integHtml += ' <span class="badge mut">已备份</span>';
+        }
+        if (drf && drf[1] === 'yes') {
+          integHtml += ' <span class="badge warn">已漂移</span>';
+        }
+      }
+      document.getElementById('st_integ').innerHTML = integHtml;
     } else {
       lastInteg = null;
       document.getElementById('st_integ').textContent = '--';
     }
     applyIntegLabel();
+
+    var aghUpEl = document.getElementById('st_agh_up');
+    if (aghUpEl) {
+      if (aghUp && aghUp[1] === 'safe') {
+        aghUpEl.innerHTML = '<span class="badge ok">纯国内 IP DoH</span>';
+      } else if (aghUp && aghUp[1] === 'unsafe') {
+        aghUpEl.innerHTML = '<span class="badge warn">含风险上游（看门狗将自动修正）</span>';
+      } else {
+        aghUpEl.innerHTML = '<span class="badge mut">--</span>';
+      }
+    }
 
     var prEl = document.getElementById('st_probe');
     if (fp && fp[1] === 'SKIP') {
@@ -556,10 +585,10 @@
     if (busy) { setResult('note', '当前有命令在执行，请稍候。'); return; }
     if (lastInteg === null) { setResult('note', '集成状态未知，请先点「刷新状态」。'); return; }
     if (lastInteg) {
-      openConfirm('关闭 DNS 集成？将从首份备份还原 Clash Meta 活动配置（移除 NS5591）。\n需重开一次 VPN 才生效；此开关独立于只看不动/自动切换模式。',
+      openConfirm('关闭 DNS 集成？将从首份备份还原 Clash Meta 活动配置（移除 NS5591 并广播触发热重载；若个别客户端未响应广播，重开一次 Clash Meta VPN 即可生效）。\n此开关独立于只看不动/自动切换模式。',
         function () { run('integ_off', function () { refreshFast(); }); });
     } else {
-      openConfirm('开启 DNS 集成？会先备份、再把 Clash Meta 活动配置的上游指向 AGH（127.0.0.1:5591），订阅更新后自动重打；随时可一键还原。\n需重开一次 VPN 才生效；开启后即使在只看不动模式下，看门狗也会自动重打补丁。',
+      openConfirm('开启 DNS 集成？会先备份、已写入 NS5591 + GEOIP,CN,DIRECT 并自动广播触发 Clash Meta 热重载（若个别客户端版本未响应广播，重开一次 Clash Meta VPN 即可生效），订阅更新后自动重打；随时可一键还原。\n开启后即使在只看不动模式下，看门狗也会自动重打补丁。',
         function () { run('integ_on', function () { refreshFast(); }); });
     }
   }

@@ -31,6 +31,14 @@ if [ -d "$BKDIR" ]; then
       else
         cat "$orig" > "$tgt" \
           && echo "NetGuard: reverted profile $uuid to pre-integration state" >&2
+        if pidof com.github.metacubex.clash.meta >/dev/null 2>&1; then
+          am broadcast \
+            -a com.github.metacubex.clash.meta.intent.action.PROFILE_CHANGED \
+            --es uuid "$uuid" \
+            -p com.github.metacubex.clash.meta \
+            >/dev/null 2>&1 \
+            && echo "NetGuard: sent PROFILE_CHANGED hot-reload for $uuid" >&2
+        fi
       fi
     fi
   done

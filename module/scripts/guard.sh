@@ -156,14 +156,14 @@ while :; do
   fi
 
   # ---- integration watchdog (independent of mode) ----
-  if [ $(( ROUND % 5 )) -eq 0 ]; then
+  if [ $(( ROUND % 5 )) -eq 1 ]; then
     sh "$MODDIR/scripts/config_toggle.sh" auto >/dev/null 2>&1
   fi
 
   # ---- AGH upstream drift guard (v2.3.1, every 10 rounds) ----
   # Auto-corrects AdGuardHome.yaml if unsafe upstream entries (1.12.12.12,
   # 1.1.1.1, 8.8.8.8, domain-form DoH) reappear after AGH module upgrade.
-  if [ $(( ROUND % 10 )) -eq 0 ]; then
+  if [ $(( ROUND % 10 )) -eq 1 ]; then
     sh "$MODDIR/scripts/config_toggle.sh" agh_guard >/dev/null 2>&1
   fi
 

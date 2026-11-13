@@ -123,8 +123,12 @@ fi
 AGH_PID=$(pidof "$AGH_PROC" 2>/dev/null); [ -n "$AGH_PID" ] || AGH_PID=0
 HIJACK=0; hijack_check && HIJACK=1
 if [ "$AGH_PID" != "0" ] && [ "$HIJACK" != "1" ]; then
-  echo "WARN  AGH 进程($AGH_PID)存活但劫持规则不在 -> 停止不对称缺陷态(历史 48 启/2 停)"
-  W=$(( W + 1 ))
+  if [ "$(mode_get)" = "auto" ] || [ -f "$FLAG_RESCUED" ]; then
+    echo "OK    AGH 进程($AGH_PID)存活，当前处于轨道 B (劫持已按预期摘除)"
+  else
+    echo "WARN  AGH 进程($AGH_PID)存活但劫持规则不在 -> 停止不对称缺陷态(历史 48 启/2 停)"
+    W=$(( W + 1 ))
+  fi
 fi
 
 echo "== 审计完成: WARN x$W =="

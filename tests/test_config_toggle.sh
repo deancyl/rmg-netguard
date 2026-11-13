@@ -79,6 +79,8 @@ for shape in inline block; do
   chk "$shape: marker saved" "[ -f '$ROOT/mod/run/backups/abcd.yaml.patched' ]"
   chk "$shape: status patched" "$CT status | grep -q 'patched: patched'"
   chk "$shape: status has geoip field" "$CT status | grep -q 'geoip:'"
+  chk "$shape: status geoip is yes" "$CT status | grep -q 'geoip: yes'"
+  chk "$shape: status agh_upstream is na (no AGH)" "$CT status | grep -q 'agh_upstream: na'"
 done
 
 # GEOIP injection is idempotent: apply on a file that already has GEOIP,CN,DIRECT
@@ -156,6 +158,21 @@ chk "agh_guard: 223.5.5.5 written"  "grep  -q '223\.5\.5\.5'   \"$T_AGH/agh/bin/
 chk "agh_guard: backup created"     "[ -f \"$T_AGH/run/backups/AdGuardHome.yaml.orig\" ]"
 out2=$(AGH_DIR="$T_AGH/agh" sh "$T_AGH/scripts/config_toggle.sh" agh_guard 2>&1) || true
 chk "agh_guard: idempotent (already safe)" "echo \"$out2\" | grep -q 'already safe'"
+
+# domain-form DoH triggers agh_guard (v2.3.2)
+cat > "$T_AGH/agh/bin/AdGuardHome.yaml" << 'YAMLEOF'
+dns:
+  upstream_dns:
+    - https://doh.pub/dns-query
+  fallback_dns:
+    - https://223.5.5.5/dns-query
+  bootstrap_dns:
+    - 223.5.5.5
+YAMLEOF
+out_doh=$(AGH_DIR="$T_AGH/agh" sh "$T_AGH/scripts/config_toggle.sh" agh_guard 2>&1) || true
+chk "agh_guard: domain DoH triggers fix" "echo \"$out_doh\" | grep -q 'OK: AGH upstream corrected'"
+chk "agh_guard: doh.pub removed" "! grep -q 'doh\.pub' \"$T_AGH/agh/bin/AdGuardHome.yaml\""
+chk "agh_guard: status reports agh_upstream: safe" "AGH_DIR=\"$T_AGH/agh\" sh \"$T_AGH/scripts/config_toggle.sh\" status | grep -q 'agh_upstream: safe'"
 
 echo "---- result: pass=$pass fail=$fail (temp: $T)"
 [ "$fail" = 0 ]

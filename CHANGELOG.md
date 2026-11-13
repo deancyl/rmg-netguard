@@ -2,6 +2,22 @@
 
 本项目使用语义化版本。发布记录以 GitHub Releases 为准；标注「主线提交」的版本已合入 `main` 并部署到验证设备，但未创建 Release tag。
 
+## v2.3.2 - 2026-11-14（主线提交）
+
+### 修复：rules_audit 在轨道 B 下的假阳性 WARN 误报
+- **根因**：`rules_audit.sh` 仅依据 `AGH_PID != 0 && HIJACK != 1` 判定为不对称缺陷态并告警。但在 `auto` 模式（轨道 B，VPN 开启且主动摘除 53 劫持）或存在 `rescue.removed` 时，该拓扑属于完全正常的预期状态。
+- **修复**：对齐 `guard.sh` 与 `probe.sh` 判据，当处于 `auto` 模式或存在 `rescue.removed` 标记时，输出 `OK AGH 进程存活，当前处于轨道 B (劫持已按预期摘除)` 且不累加 WARN 计数。
+
+### 增强：AGH 上游看门狗与巡检时效
+- **正则补齐**：`AGH_UNSAFE_PATTERN` 补齐匹配域名形态 DoH（`^[[:space:]]+-[[:space:]]+https://[a-zA-Z]`），杜绝因 `https://doh.pub/dns-query` 引发 bootstrap UDP/53 回环风险。
+- **消除空窗期**：`guard.sh` 将巡检判定由取模等于 0 改为等于 1，在守护进程启动第 1 轮（第 0 秒）立即执行一次 CMFA 与 AGH 上游巡检，消除启动后首轮 7.5 至 15 分钟的延迟盲区。
+- **卸载热重载**：`uninstall.sh` 在还原 Meta profile 备份后，若检测到 CMFA 运行中则广播发送 `PROFILE_CHANGED`，使内存中 mihomo 即刻生效。
+
+### 升级：WebUI 状态展示与辅助徽章
+- **AGH 上游状态行**：在「模式与 DNS 集成」卡片新增 `AGH 上游状态`，实时展示 `纯国内 IP DoH`、`含风险上游（看门狗将自动修正）` 等状态徽章。
+- **集成状态辅助徽章**：`st_integ` 并列渲染 `GEOIP兜底` / `缺GEOIP`、`已备份`、`已漂移` 等紧凑辅助徽章。
+- **热重载提示文案**：全面更新 WebUI 提示说明，写明自动广播触发 Clash Meta 热重载机制。
+
 ## v2.3.1 - 2026-11-11（主线提交）
 
 ### 修复：BusyBox nc 探针回归（probe_dns / filter_probe 静默失败）

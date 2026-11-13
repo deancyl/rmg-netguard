@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# RMG NetGuard v2.3.1 - DNS integration toggle for Clash Meta active profile.
+# RMG NetGuard v2.3.2 - DNS integration toggle for Clash Meta active profile.
 # Applies/reverts nameserver -> 127.0.0.1:5591 in the ACTIVE profile's
 # config.yaml so mihomo routes its upstream through AGH (track B filter).
 # Also injects - GEOIP,CN,DIRECT before - MATCH to ensure domestic traffic
@@ -206,22 +206,45 @@ do_revert() {
   return 0
 }
 
+# ---- AGH upstream drift guard (v2.3.1/v2.3.2) ----
+# Enforces safe upstream DNS in AdGuardHome.yaml: removes 1.12.12.12,
+# 1.1.1.1, 8.8.8.8 and domain-form DoH, rewrites upstream_dns/fallback_dns/bootstrap_dns
+# to pure-IP CNdoH entries. Called by guard.sh and manually via config_toggle.sh agh_guard.
+AGH_YAML="${AGH_DIR}/bin/AdGuardHome.yaml"
+AGH_UNSAFE_PATTERN='1\.12\.12\.12|1\.1\.1\.1|8\.8\.8\.8|^[[:space:]]+-[[:space:]]+https://[a-zA-Z]'
+
+agh_upstream_needs_fix() {
+  [ -r "$AGH_YAML" ] || return 1
+  grep -qE "$AGH_UNSAFE_PATTERN" "$AGH_YAML" 2>/dev/null
+}
+
 do_status() {
-  target_file || { echo "profile: none"; return 0; }
-  st=$(integration_check)
-  ORIG="$(backup_path)"
-  MARK="$(marker_path)"
-  b="no"; [ -f "$ORIG" ] && b="yes"
-  geoip="no"
-  grep -qE '^[[:space:]]*-[[:space:]]*GEOIP,CN,DIRECT' "$TARGET_FILE" 2>/dev/null && geoip="yes"
-  drift="no"
-  if [ -f "$MARK" ] && [ -f "$TARGET_FILE" ]; then
-    cur=$(md5sum "$TARGET_FILE" | cut -d' ' -f1)
-    want=$(cat "$MARK" 2>/dev/null)
-    [ "$cur" = "$want" ] || drift="yes"
+  local agh_up="safe"
+  if [ ! -r "$AGH_YAML" ]; then
+    agh_up="na"
+  elif agh_upstream_needs_fix; then
+    agh_up="unsafe"
   fi
-  echo "profile: $TARGET_UUID"
-  echo "patched: $st geoip: $geoip backup: $b drifted: $drift"
+
+  if target_file; then
+    st=$(integration_check)
+    ORIG="$(backup_path)"
+    MARK="$(marker_path)"
+    b="no"; [ -f "$ORIG" ] && b="yes"
+    geoip="no"
+    grep -qE '^[[:space:]]*-[[:space:]]*GEOIP,CN,DIRECT' "$TARGET_FILE" 2>/dev/null && geoip="yes"
+    drift="no"
+    if [ -f "$MARK" ] && [ -f "$TARGET_FILE" ]; then
+      cur=$(md5sum "$TARGET_FILE" | cut -d' ' -f1)
+      want=$(cat "$MARK" 2>/dev/null)
+      [ "$cur" = "$want" ] || drift="yes"
+    fi
+    echo "profile: $TARGET_UUID"
+    echo "patched: $st geoip: $geoip backup: $b drifted: $drift"
+  else
+    echo "profile: none"
+  fi
+  echo "agh_upstream: $agh_up"
 }
 
 do_auto() {
@@ -250,21 +273,6 @@ do_auto() {
     fi
   fi
   return 0
-}
-
-# ---- AGH upstream drift guard (v2.3.1) ----
-# Enforces safe upstream DNS in AdGuardHome.yaml: removes 1.12.12.12,
-# 1.1.1.1, 8.8.8.8 and rewrites upstream_dns/fallback_dns/bootstrap_dns to
-# pure-IP CNdoH entries. Called by guard.sh every cycle and manually via
-# config_toggle.sh agh_guard.
-# SAFETY: always verifies PID cmdline before SIGHUP; never overwrites the
-# first backup (AdGuardHome.yaml.orig) so uninstall.sh can restore it.
-AGH_YAML="${AGH_DIR}/bin/AdGuardHome.yaml"
-AGH_UNSAFE_PATTERN='1\.12\.12\.12|1\.1\.1\.1|8\.8\.8\.8'
-
-agh_upstream_needs_fix() {
-  [ -r "$AGH_YAML" ] || return 1
-  grep -qE "$AGH_UNSAFE_PATTERN" "$AGH_YAML" 2>/dev/null
 }
 
 do_agh_guard() {

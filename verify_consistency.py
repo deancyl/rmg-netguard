@@ -124,6 +124,7 @@ FORBIDDEN = {
 REQUIRED = {
     "module/webroot/index.html": [
         "fail-open", "重开一次", "300 秒", "最近 50 条", "约 3 分钟", "version=",
+        "st_agh_up", "agh_upstream",
     ],
     "README.md": ["fail-open", "重开一次", "独立于", "RESCUE"],
     "wiki/Home.md": ["fail-open", "术语对照"],
@@ -136,14 +137,15 @@ REQUIRED = {
     "module/scripts/config_toggle.sh": ["patch_nameserver()", "block list", "[ -f \"$MARK\" ] || return 0",
                                         "patch_geoip_rule()", "broadcast_reload()", "PROFILE_CHANGED",
                                         "agh_upstream_needs_fix()", "AGH_UNSAFE_PATTERN", "do_agh_guard()",
-                                        "agh_guard) do_agh_guard"],
+                                        "agh_guard) do_agh_guard", "agh_upstream:"],
     "module/scripts/rules_audit.sh": ["RULE-SET,(cn|cn-ip|china)",
                                    "1\\.12\\.12\\.12",
                                    "APNIC Anycast",
                                    "域名形态DoH"],
     "tests/test_config_toggle.sh": ["block-list", "auto: no marker", "re-apply",
-                                    "GEOIP injected", "geoip_idempotent", "auto: geoip drift", "agh_guard", "1.12.12.12"],    "module/uninstall.sh": ["AdGuardHome.yaml.orig", "AGH_ORIG",
-                               "AGH_YAML"],
+                                    "GEOIP injected", "geoip_idempotent", "auto: geoip drift", "agh_guard", "1.12.12.12", "agh_upstream"],
+    "module/uninstall.sh": ["AdGuardHome.yaml.orig", "AGH_ORIG", "AGH_YAML", "PROFILE_CHANGED"],
+    "module/scripts/env.sh": ["/system/bin/nc"],
 
 }
 
